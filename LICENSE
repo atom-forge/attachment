@@ -1,0 +1,28 @@
+AtomForge — Patron License
+Copyright (c) 2024-present Elvis Szabo
+
+Permission is hereby granted, free of charge, to any individual or
+non-commercial organization obtaining a copy of this software (the "Software"),
+to use, copy, modify, and distribute the Software for non-commercial purposes,
+subject to the following conditions:
+
+NON-COMMERCIAL USE
+The above rights are granted at no charge for:
+  - Personal and hobby projects
+  - Open source projects
+  - Non-profit organizations
+
+COMMERCIAL USE
+Any use of the Software in a for-profit context requires a paid commercial
+license. A commercial license is granted to any individual or entity that
+actively supports the project via GitHub Sponsors
+(https://github.com/sponsors/atom-forge).
+
+The license is perpetual for projects initiated during the active support
+period. Stopping support does not revoke the license for projects already
+in production at the time.
+
+DISCLAIMER
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.

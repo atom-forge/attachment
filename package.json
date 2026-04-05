@@ -1,0 +1,41 @@
+{
+	"name": "@atom-forge/attachment",
+	"version": "0.1.2",
+	"description": "Attachment management for your ORM",
+	"author": "Gergely Laborci",
+	"license": "SEE LICENSE IN LICENSE",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"files": [
+		"dist",
+		"LICENSE",
+		"README.md"
+	],
+	"scripts": {
+		"build": "tsc",
+		"prepublishOnly": "bun run scripts/prepublish.ts && bun run build",
+		"release": "npm publish --access public"
+	},
+	"dependencies": {
+		"mime": "^4.0.0"
+	},
+	"peerDependencies": {
+		"sharp": ">=0.32.0",
+		"music-metadata": ">=11.12.0",
+		"zod": ">=4.0.0"
+	},
+	"devDependencies": {
+		"typescript": "^6.0.2",
+		"@types/node": "^22.0.0",
+		"sharp": "^0.34.5",
+		"music-metadata": "^11.12.3",
+		"zod": "^4.3.6"
+	}
+}
