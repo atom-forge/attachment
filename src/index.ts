@@ -14,7 +14,7 @@ export type {
 	Density,
 } from './types.js';
 export { AttachmentValidationError, encodeFocus, decodeFocus } from './types.js';
-export { createLocalProvider, type LocalStorageProvider } from './storage/craete-local-provider.js';
+export { createLocalProvider, type LocalStorageProvider } from './storage/create-local-provider.js';
 export {
 	defineAttachments,
 	type EntityOptions,
