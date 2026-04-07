@@ -24,13 +24,13 @@ export {
 	type AttachmentHandler,
 	physicalPath,
 } from './define-attachments.js';
-export { createFileServer, type FileServerDriver, type FileServerOptions } from './file-server/create-file-server.js';
+export { createFileServer, type FileServerDriver, type FileServerOptions, type FileServerHandler } from './file-server/create-file-server.js';
 export { autoDriver } from './file-server/file-server.auto.js';
 export { bunDriver } from './file-server/file-server.bun.js';
 export { nodeDriver } from './file-server/file-server.node.js';
 export { buildImageUrl, buildVariantUrl } from './image/image-url.js';
 export { generateImage } from './image/generate-image.js';
-export { createImageServer, type ImageServiceConfig } from './image/create-image-server.js';
+export { createImageServer, type ImageServiceConfig, type ImageServerHandler } from './image/create-image-server.js';
 export {
 	makeAttachmentHandler,
 	type ImgVariants,

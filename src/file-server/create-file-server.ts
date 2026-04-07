@@ -20,33 +20,43 @@ export interface FileServerOptions {
 	driver:       FileServerDriver;
 }
 
-/**
- * Returns a handler function: `(pathname) => Promise<Response | null>`.
- * Returns `null` for paths outside the serve prefix — pass through to the framework.
- */
-export function createFileServer(options: FileServerOptions): (pathname: string) => Promise<Response | null> {
+export interface FileServerHandler {
+	match(request: Request): boolean;
+	handle(request: Request): Promise<Response>;
+}
+
+export function createFileServer(options: FileServerOptions): FileServerHandler {
 	const { uploadDir, driver } = options;
 	const servePrefix = options.servePrefix ?? '/file';
 	const root = path.resolve(uploadDir);
 
-	return async function serveFile(pathname: string): Promise<Response | null> {
-		if (!pathname.startsWith(servePrefix + '/')) return null;
+	function getPathname(request: Request): string {
+		return new URL(request.url).pathname;
+	}
 
-		const rest  = pathname.slice(servePrefix.length + 1); // "{slug}/{filename}"
-		const slash = rest.indexOf('/');
-		if (slash === -1) return null;
+	return {
+		match(request: Request): boolean {
+			return getPathname(request).startsWith(servePrefix + '/');
+		},
 
-		const slug     = rest.slice(0, slash);
-		const filename = rest.slice(slash + 1);
-		const groupId  = slug.replace(/-[a-z0-9]+$/, '');
-		const shard    = groupId.slice(0, 2);
-		const fullPath = path.join(root, shard, groupId, filename);
+		async handle(request: Request): Promise<Response> {
+			const pathname = getPathname(request);
+			const rest     = pathname.slice(servePrefix.length + 1); // "{slug}/{filename}"
+			const slash    = rest.indexOf('/');
+			if (slash === -1) return new Response('Not Found', { status: 404 });
 
-		if (!(await driver.exists(fullPath))) {
-			return new Response('File not found', { status: 404 });
-		}
+			const slug     = rest.slice(0, slash);
+			const filename = rest.slice(slash + 1);
+			const groupId  = slug.replace(/-[a-z0-9]+$/, '');
+			const shard    = groupId.slice(0, 2);
+			const fullPath = path.join(root, shard, groupId, filename);
 
-		const contentType = mime.getType(filename) ?? 'application/octet-stream';
-		return driver.serve(fullPath, contentType);
+			if (!(await driver.exists(fullPath))) {
+				return new Response('File not found', { status: 404 });
+			}
+
+			const contentType = mime.getType(filename) ?? 'application/octet-stream';
+			return driver.serve(fullPath, contentType);
+		},
 	};
 }

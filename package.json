@@ -2,7 +2,10 @@
 	"name": "@atom-forge/attachment",
 	"version": "0.1.3",
 	"description": "Attachment management for your ORM",
-	"author": "Gergely Laborci",
+	"author": {
+		"name": "Gergely Laborci",
+		"url": "https://github.com/laborci"
+	},
 	"license": "SEE LICENSE IN LICENSE",
 	"type": "module",
 	"main": "dist/index.js",
