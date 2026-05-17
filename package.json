@@ -1,6 +1,6 @@
 {
 	"name": "@atom-forge/attachment",
-	"version": "0.1.4",
+	"version": "0.2.0",
 	"description": "Attachment management for your ORM",
 	"author": {
 		"name": "Gergely Laborci",
@@ -27,6 +27,7 @@
 		"release": "npm publish --access public"
 	},
 	"dependencies": {
+		"@aws-sdk/client-s3": "^3.1046.0",
 		"mime": "^4.0.0"
 	},
 	"peerDependencies": {

@@ -18,14 +18,14 @@ import type { Focus } from '../types.js';
  * Peer dependency: `sharp`
  */
 export async function generateImage(
-	sourcePath: string,
+	source: string | Buffer,
 	mode: 'e' | 'a' | 'c' | 'b' | Focus,
 	width?: number,
 	height?: number,
 ) {
 	const sharp = (await import('sharp')).default;
 
-	const img = sharp(sourcePath, { animated: true });
+	const img = sharp(source, { animated: true });
 	const metadata = await img.metadata();
 
 	// Account for EXIF rotation when reading dimensions

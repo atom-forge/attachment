@@ -1,15 +1,14 @@
-import { join, resolve } from 'node:path';
-import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
-import { decodeFocus, generateImage, physicalPath } from '../index.js';
+import { decodeFocus, physicalPath } from '../index.js';
+import { generateImage } from './generate-image.js';
 import { createHmac } from 'node:crypto';
-import type { ImageVariantMap } from '../types.js';
+import type { ImageVariantMap, StorageProvider } from '../types.js';
 
 export interface ImageServiceConfig {
-	variants:     ImageVariantMap;
-	uploadDir:    string;
-	thumbDir:     string;
-	thumbPrefix?: string;   // default: '/img'
-	focusSecret:  string;
+	variants:       ImageVariantMap;
+	sourceProvider: StorageProvider;
+	thumbProvider:  StorageProvider;
+	thumbPrefix?:   string;  // default: '/img'
+	focusSecret:    string;
 }
 
 export interface ImageServerHandler {
@@ -25,6 +24,7 @@ export interface ImageServerHandler {
  *   /{prefix}/{gid}-{ver}/{focus12}.{w}x{h}.{hash4}/{filename}.webp  (manual focus)
  */
 export function createImageServer(config: ImageServiceConfig): ImageServerHandler {
+	const { sourceProvider, thumbProvider } = config;
 	const focusHash = (encoded: string) =>
 		createHmac('sha256', config.focusSecret).update(encoded).digest('hex').slice(0, 4);
 	const availableSizes = [1, 2, 3].flatMap((d) =>
@@ -32,9 +32,7 @@ export function createImageServer(config: ImageServiceConfig): ImageServerHandle
 			(def) => `${Math.round((def.w ?? 0) * d)}x${Math.round((def.h ?? 0) * d)}`,
 		),
 	);
-	const { uploadDir, thumbDir } = config;
-	const prefix = config.thumbPrefix ?? '/img';
-	const uploadRoot = resolve(uploadDir);
+	const prefix  = config.thumbPrefix ?? '/img';
 	const inFlight = new Map<string, Promise<Buffer>>();
 
 	function getPathname(request: Request): string {
@@ -83,16 +81,17 @@ export function createImageServer(config: ImageServiceConfig): ImageServerHandle
 				size = modeTokens[1];
 			}
 
-			// Flat cache filename: join URL segments with dots
-			const flatName  = `${gidVer}.${modeSeg}.${urlFilename}`;
-			const cachePath = join(thumbDir, flatName);
+			// Flat cache key: join URL segments with dots
+			const flatName = `${gidVer}.${modeSeg}.${urlFilename}`;
 
 			// 0. Cache hit
-			try {
-				const cached = await readFile(cachePath);
-				return webpResponse(cached);
-			} catch {
-				// not cached — continue
+			if (await thumbProvider.exists(flatName)) {
+				try {
+					const cached = await thumbProvider.read(flatName);
+					return webpResponse(cached);
+				} catch {
+					// cache read failed — regenerate
+				}
 			}
 
 			// 1. Validate size
@@ -107,11 +106,9 @@ export function createImageServer(config: ImageServiceConfig): ImageServerHandle
 				}
 			}
 
-			// 3. Locate original file
-			const sourcePath = join(uploadRoot, physicalPath(groupId, filename));
-			try {
-				await access(sourcePath);
-			} catch {
+			// 3. Check original exists
+			const sourcePath = physicalPath(groupId, filename);
+			if (!(await sourceProvider.exists(sourcePath))) {
 				return new Response('Not found', { status: 404 });
 			}
 
@@ -128,7 +125,10 @@ export function createImageServer(config: ImageServiceConfig): ImageServerHandle
 			// 4. Generate — dedup concurrent requests for the same key
 			let genPromise = inFlight.get(flatName);
 			if (!genPromise) {
-				genPromise = generateImage(sourcePath, mode, width, height);
+				genPromise = (async () => {
+					const sourceBuffer = await sourceProvider.read(sourcePath);
+					return generateImage(sourceBuffer, mode, width, height);
+				})();
 				inFlight.set(flatName, genPromise);
 				genPromise.finally(() => inFlight.delete(flatName));
 			}
@@ -142,8 +142,9 @@ export function createImageServer(config: ImageServiceConfig): ImageServerHandle
 
 			// 5. Cache write (non-fatal on failure)
 			try {
-				await mkdir(thumbDir, { recursive: true });
-				await writeFile(cachePath, buffer as unknown as Uint8Array);
+				const ab = new ArrayBuffer(buffer.length);
+				new Uint8Array(ab).set(buffer);
+				await thumbProvider.save(flatName, new File([ab], flatName, { type: 'image/webp' }));
 			} catch {
 				// serve anyway
 			}

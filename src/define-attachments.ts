@@ -8,6 +8,7 @@ import type {
 	UploadMiddleware,
 	CategoryInput,
 } from './types.js';
+import type { EventEmitter } from './events/types.js';
 
 // --- Config types ---
 
@@ -22,6 +23,8 @@ export interface EntityDefinition<TCategories extends Record<string, CategoryInp
 
 // url is now part of AttachmentData; this alias is kept for backward compatibility
 export type AttachmentWithUrl<TMeta = unknown> = AttachmentData<TMeta>;
+
+const defaultNextGroupId = async () => BigInt('0x' + crypto.randomUUID().replace(/-/g, '')).toString(36);
 
 // --- Internal helpers ---
 
@@ -86,6 +89,7 @@ function makeCategoryHandler<TMeta>(
 	servePrefix: string,
 	sanitizeFn: ((name: string) => string) | false,
 	findUniqueFn: (existing: string[], name: string) => string,
+	eventManager: EventEmitter | undefined,
 ): CategoryHandler<TMeta> {
 	function getCategoryStore(): CategoryStore | undefined {
 		return readStore(entity)[category];
@@ -116,11 +120,6 @@ function makeCategoryHandler<TMeta>(
 	function requireProvider(): StorageProvider {
 		if (!provider) throw new Error('No StorageProvider configured.');
 		return provider;
-	}
-
-	function requireNextGroupId(): DefineAttachmentsOptions['nextGroupId'] {
-		if (!nextGroupId) throw new Error('nextGroupId callback not configured.');
-		return nextGroupId;
 	}
 
 	async function runMiddlewares(file: File, meta: TMeta, files: AttachmentData<TMeta>[]): Promise<{ file: File; meta: TMeta }> {
@@ -157,7 +156,7 @@ function makeCategoryHandler<TMeta>(
 
 			let groupId = currentStore?.i;
 			if (!groupId) {
-				groupId = await requireNextGroupId()(entityType, entityId, category);
+				groupId = await (nextGroupId ?? defaultNextGroupId)(entityType, entityId, category);
 			}
 			const vs = (currentStore?.v ?? 0) + 1;
 			const version = vs.toString(36);
@@ -184,6 +183,7 @@ function makeCategoryHandler<TMeta>(
 			entity.attachments = raw;
 
 			const attachment = toPublic(newItem, groupId);
+			eventManager?.trigger({ type: 'attachment:add', entityType, entityId, category, groupId, attachment });
 			return { attachment, rollback: () => p.delete(path) };
 		},
 
@@ -220,7 +220,9 @@ function makeCategoryHandler<TMeta>(
 			raw[category] = { ...currentStore, v: vs, f: newItems };
 			entity.attachments = raw;
 
-			const attachment = toPublic(updatedItem, groupId);
+			const oldAttachment = toPublic(currentItems[idx], groupId);
+			const attachment    = toPublic(updatedItem, groupId);
+			eventManager?.trigger({ type: 'attachment:replace', entityType, entityId, category, groupId, oldAttachment, attachment });
 			return { attachment, rollback: () => p.delete(path) };
 		},
 
@@ -239,7 +241,9 @@ function makeCategoryHandler<TMeta>(
 			const raw = readStore(entity);
 			raw[category] = { ...currentStore, v: vs, f: newItems };
 			entity.attachments = raw;
-			return toPublic(updatedItem, currentStore.i);
+			const attachment = toPublic(updatedItem, currentStore.i);
+			eventManager?.trigger({ type: 'attachment:meta-updated', entityType, entityId, category, groupId: currentStore.i, attachment });
+			return attachment;
 		},
 
 		async rename(oldName: string, newName: string): Promise<void> {
@@ -263,6 +267,7 @@ function makeCategoryHandler<TMeta>(
 			const newItems = [...currentItems];
 			newItems[idx] = updatedItem;
 			setItems(newItems, currentStore);
+			eventManager?.trigger({ type: 'attachment:rename', entityType, entityId, category, groupId: currentStore.i, oldName, newName: sanitized });
 		},
 
 		async delete(filename: string): Promise<void> {
@@ -275,6 +280,7 @@ function makeCategoryHandler<TMeta>(
 
 			await p.delete(physicalPath(currentStore.i, filename));
 			setItems(currentItems.filter((_, i) => i !== idx), currentStore);
+			eventManager?.trigger({ type: 'attachment:delete', entityType, entityId, category, groupId: currentStore.i, filename });
 		},
 
 		reorder(filenames: string[]): void {
@@ -309,6 +315,7 @@ function makeEntityHandler<TCategories extends Record<string, CategoryInput>>(
 	servePrefix: string,
 	sanitizeFn: ((name: string) => string) | false,
 	findUniqueFn: (existing: string[], name: string) => string,
+	eventManager: EventEmitter | undefined,
 ) {
 	const idField = entityDef._options.idField ?? 'id';
 
@@ -320,7 +327,7 @@ function makeEntityHandler<TCategories extends Record<string, CategoryInput>>(
 			const input = entityDef.categories[category];
 			const middlewares = Array.isArray(input) ? input : [];
 			(result as Record<string, CategoryHandler>)[category] = makeCategoryHandler(
-				entityType, entityId, category, middlewares, entity, provider, nextGroupId, servePrefix, sanitizeFn, findUniqueFn,
+				entityType, entityId, category, middlewares, entity, provider, nextGroupId, servePrefix, sanitizeFn, findUniqueFn, eventManager,
 			);
 		}
 
@@ -333,6 +340,7 @@ function makeEntityHandler<TCategories extends Record<string, CategoryInput>>(
 				}
 			}
 			entity.attachments = {};
+			eventManager?.trigger({ type: 'attachment:purge', entityType, entityId });
 		};
 
 		return result;
@@ -365,11 +373,13 @@ export const defineAttachments: DefineAttachmentsFn = Object.assign(
 			sanitizeOpt === false ? false :
 			typeof sanitizeOpt === 'function' ? sanitizeOpt :
 			defaultSanitize;
-		const findUniqueFn = options?.findUnique ?? defaultFindUnique;
+		const findUniqueFn  = options?.findUnique ?? defaultFindUnique;
+		const eventManager  = options?.eventManager;
+		if (provider && eventManager) provider.setEventManager?.(eventManager);
 		const result = {} as { [K in keyof TConfig]: (entity: EntityRecord) => AttachmentHandler<TConfig[K]['categories']> };
 
 		for (const key of Object.keys(config) as (keyof TConfig & string)[]) {
-			result[key] = makeEntityHandler(key, config[key], provider, nextGroupId, servePrefix, sanitizeFn, findUniqueFn) as typeof result[typeof key];
+			result[key] = makeEntityHandler(key, config[key], provider, nextGroupId, servePrefix, sanitizeFn, findUniqueFn, eventManager) as typeof result[typeof key];
 		}
 
 		return result;

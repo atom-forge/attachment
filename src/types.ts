@@ -44,9 +44,12 @@ export interface AttachmentData<TMeta = unknown> {
 
 export interface StorageProvider {
 	save(path: string, file: File): Promise<void>;
+	read(path: string): Promise<Buffer>;
+	stream(path: string): ReadableStream<Uint8Array>;
 	delete(path: string): Promise<void>;
 	exists(path: string): Promise<boolean>;
 	rename(oldPath: string, newPath: string): Promise<void>;
+	setEventManager?(em: import('./events/types.js').EventEmitter): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,11 +57,12 @@ export interface StorageProvider {
 // ---------------------------------------------------------------------------
 
 export interface DefineAttachmentsOptions {
-	provider:     StorageProvider;
-	nextGroupId:  (entityType: string, entityId: string, category: string) => Promise<string>;
-	servePrefix?: string;                                       // URL prefix for generated file URLs, default: '/file'
-	sanitize?:    false | true | ((name: string) => string);   // filename sanitization, default: true (built-in)
-	findUnique?:  (existing: string[], name: string) => string; // collision resolution for add(), default: base(n)ext
+	provider:      StorageProvider;
+	nextGroupId?:  (entityType: string, entityId: string, category: string) => Promise<string>;
+	servePrefix?:  string;                                       // URL prefix for generated file URLs, default: '/file'
+	sanitize?:     false | true | ((name: string) => string);   // filename sanitization, default: true (built-in)
+	findUnique?:   (existing: string[], name: string) => string; // collision resolution for add(), default: base(n)ext
+	eventManager?: import('./events/types.js').EventEmitter;
 }
 
 // ---------------------------------------------------------------------------

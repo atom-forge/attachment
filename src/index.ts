@@ -13,8 +13,22 @@ export type {
 	ImageVariantMap,
 	Density,
 } from './types.js';
+export type {
+	EventEmitter,
+	AttachmentEvent,
+	AttachmentAddEvent,
+	AttachmentReplaceEvent,
+	AttachmentDeleteEvent,
+	AttachmentRenameEvent,
+	AttachmentMetaUpdatedEvent,
+	AttachmentPurgeEvent,
+	EntityDeletedEvent,
+	StorageRenameCleanupFailedEvent,
+	ThumbnailGeneratedEvent,
+} from './events/types.js';
 export { AttachmentValidationError, encodeFocus, decodeFocus } from './types.js';
 export { createLocalProvider, type LocalStorageProvider } from './storage/create-local-provider.js';
+export { createS3Provider, type S3ProviderConfig, type S3StorageProvider } from './storage/create-s3-provider.js';
 export {
 	defineAttachments,
 	type EntityOptions,
@@ -40,3 +54,4 @@ export {
 	type AttachmentHandlerOptions,
 } from './client-handler.js';
 export * from './middlewares/index.js';
+export { createPrismaMiddleware } from './prisma/create-prisma-middleware.js';
