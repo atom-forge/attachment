@@ -1,7 +1,22 @@
 {
 	"name": "@atom-forge/attachment",
-	"version": "0.2.1",
+	"version": "0.2.2",
 	"description": "Attachment management for your ORM",
+	"homepage": "https://github.com/atom-forge/attachment#readme",
+	"repository": {
+		"url": "git://github.com/atom-forge/attachment.git"
+	},
+	"bugs": {
+		"url": "https://github.com/atom-forge/attachment/issues"
+	},
+	"keywords": [
+		"attachment",
+		"file-upload",
+		"prisma",
+		"typescript",
+		"s3",
+		"image"
+	],
 	"author": {
 		"name": "Gergely Laborci",
 		"url": "https://github.com/laborci"
