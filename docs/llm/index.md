@@ -1,3 +1,11 @@
+# @atom-forge/attachment — LLM Reference
+
+Portable, framework-agnostic file attachment system for Prisma entities.
+Stores file metadata in a `Json?` column — no separate migration or file table needed.
+Handles upload, validation, transformation (WebP, thumbnails), serving, and S3/local storage.
+
+---
+
 # Getting Started — LLM Reference
 
 ## Install
