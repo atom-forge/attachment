@@ -50,6 +50,7 @@ item.url                         // '/file/{gid}-{v}/{filename}'
 item.img.avatar()                // '/img/{gid}-{v}/e.400x400/{filename}.webp'
 item.img.avatar(2)               // 2x density
 ```
+
 ---
 
 # Handler API — LLM Reference
@@ -112,6 +113,7 @@ try { await prisma.update(...) } catch { await rollback(); throw; }
 | `sanitize`     | `false \| true \| fn`                         | `true`        |
 | `findUnique`   | `(existing, name) => string`                  | `base(n)ext`  |
 | `eventManager` | `EventEmitter`                                | —             |
+
 ---
 
 # Middleware — LLM Reference
@@ -221,6 +223,7 @@ item.img.thumb(1, 'c') // force mode
 
 ## Animated images
 Animated GIF/WebP: e and a crop modes silently downgraded to c. Manual focus always preserved.
+
 ---
 
 # Storage — LLM Reference
@@ -311,6 +314,7 @@ import { createPrismaMiddleware } from '@atom-forge/attachment';
 prisma.$use(createPrismaMiddleware(eventManager));
 // fires entity:deleted { model, entity } on every prisma delete
 ```
+
 ---
 
 # Serving Files — LLM Reference
