@@ -1,6 +1,6 @@
 {
 	"name": "@atom-forge/attachment",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"description": "Attachment management for your ORM",
 	"homepage": "https://github.com/atom-forge/attachment#readme",
 	"repository": {
