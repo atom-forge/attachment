@@ -42,16 +42,7 @@ export { createFileServer, type FileServerDriver, type FileServerOptions, type F
 export { autoDriver } from './file-server/file-server.auto.js';
 export { bunDriver } from './file-server/file-server.bun.js';
 export { nodeDriver } from './file-server/file-server.node.js';
-export { buildImageUrl, buildVariantUrl } from './image/image-url.js';
 export { generateImage } from './image/generate-image.js';
 export { createImageServer, type ImageServiceConfig, type ImageServerHandler } from './image/create-image-server.js';
-export {
-	makeAttachmentHandler,
-	type ImgVariants,
-	type ItemView,
-	type CategoryView,
-	type AttachmentHandlerFor,
-	type AttachmentHandlerOptions,
-} from './client-handler.js';
 export * from './middlewares/index.js';
 export { createPrismaMiddleware } from './prisma/create-prisma-middleware.js';

@@ -94,7 +94,7 @@ h.avatar.get('photo.jpg') // AttachmentData | undefined
 A kliens oldali handler közvetlenül olvassa az entitás `attachments` JSON mezőjét — nem kell szerver hívás.
 
 ```ts
-import { makeAttachmentHandler } from '@atom-forge/attachment/client-handler';
+import { makeAttachmentHandler } from '@atom-forge/attachment/client';
 import { imageVariants } from './image-variants.js';
 
 const h = makeAttachmentHandler(imageVariants, { servePrefix: '/file', thumbPrefix: '/img' });
@@ -109,4 +109,4 @@ item?.img.avatar()      // '/img/abc123-3/e.400x400/photo.jpg.webp'
 item?.img.avatar(2)     // '/img/abc123-3/e.800x800/photo.jpg.webp'  (2x retina)
 ```
 
-> Böngészős / SSR komponensekben leaf fájlból importálj (`client-handler.js`), ne a barrel `index.ts`-ből. A barrel Node.js szerver modulokat is re-exportál.
+> Böngészős / SSR komponensekben `@atom-forge/attachment/client`-ből importálj. A főcsomag Node.js szerver modulokat is re-exportál.

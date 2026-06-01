@@ -65,7 +65,7 @@ avatar @3x  →  e.1200x1200
 Type-safe URL builder. Accepts any `AttachmentData<unknown>` — no `ImgStat` required.
 
 ```ts
-import { buildVariantUrl } from '@atom-forge/attachment';
+import { buildVariantUrl } from '@atom-forge/attachment/client';
 
 buildVariantUrl(imageVariants, attachment, 'avatar')         // 1x, entropy fallback
 buildVariantUrl(imageVariants, attachment, 'avatar', 2)      // 2x
@@ -76,16 +76,16 @@ Mode resolution: explicit arg → `meta.img.c` (if stored by `imgstat`) → `'e'
 
 ---
 
-## `buildThumbnailUrl(attachment, width, height, mode?, prefix?)`
+## `buildImageUrl(attachment, width, height, mode?, prefix?)`
 
 Low-level builder. Requires `AttachmentData<{ img: ImgStat }>` when `mode` is omitted.
 
 ```ts
-import { buildThumbnailUrl } from '@atom-forge/attachment';
+import { buildImageUrl } from '@atom-forge/attachment/client';
 
-buildThumbnailUrl(attachment, 400, 400)        // uses meta.img.c
-buildThumbnailUrl(attachment, 400, 400, 'e')   // explicit mode
-buildThumbnailUrl(attachment, 400, 0, 'a')     // width-only
+buildImageUrl(attachment, 400, 400)        // uses meta.img.c
+buildImageUrl(attachment, 400, 400, 'e')   // explicit mode
+buildImageUrl(attachment, 400, 0, 'a')     // width-only
 ```
 
 For manual focus, `meta.img.ch` must be present (populated by `imgstat` + `FocusHashFn`).
@@ -97,7 +97,7 @@ For manual focus, `meta.img.ch` must be present (populated by `imgstat` + `Focus
 Client-side factory. Reads the entity's `attachments` JSON field directly — no server round-trip.
 
 ```ts
-import { makeAttachmentHandler } from '@atom-forge/attachment/client-handler';
+import { makeAttachmentHandler } from '@atom-forge/attachment/client';
 
 const h = makeAttachmentHandler(imageVariants);
 // options: { servePrefix?: string, thumbPrefix?: string }  (defaults: '/file', '/img')

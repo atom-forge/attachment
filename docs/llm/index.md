@@ -50,7 +50,7 @@ h.avatar.get('photo.jpg') // AttachmentData | undefined
 
 ### Read (client)
 ```ts
-import { makeAttachmentHandler } from '@atom-forge/attachment/client-handler';
+import { makeAttachmentHandler } from '@atom-forge/attachment/client';
 const h = makeAttachmentHandler(imageVariants, { servePrefix: '/file', thumbPrefix: '/img' });
 h.course(entity).avatar.first    // ItemView | undefined
 h.user(entity).gallery.all       // ItemView[]
@@ -201,22 +201,24 @@ Client multiplies variant dims by density before building URL. Server has no den
 
 ### URL builders
 ```ts
+// import from client entry point
+import { buildVariantUrl, buildImageUrl } from '@atom-forge/attachment/client';
+
 // type-safe, any AttachmentData, no ImgStat needed
 buildVariantUrl(variants, attachment, 'avatar')        // 1x, entropy fallback
 buildVariantUrl(variants, attachment, 'avatar', 2)     // 2x
 buildVariantUrl(variants, attachment, 'thumb', 1, 'c') // force centre
 
 // low-level
-buildThumbnailUrl(attachment, 400, 400)       // uses meta.img.c
-buildThumbnailUrl(attachment, 400, 400, 'e')  // explicit mode
-buildThumbnailUrl(attachment, 400, 0, 'a')    // width-only
+buildImageUrl(attachment, 400, 400)       // uses meta.img.c
+buildImageUrl(attachment, 400, 400, 'e')  // explicit mode
+buildImageUrl(attachment, 400, 0, 'a')    // width-only
 ```
 Mode resolution: explicit arg → `meta.img.c` → `'e'`
 
 ### Client handler (browser-safe)
 ```ts
-// import from leaf, NOT barrel (barrel re-exports Node modules)
-import { makeAttachmentHandler } from '@atom-forge/attachment/client-handler';
+import { makeAttachmentHandler } from '@atom-forge/attachment/client';
 const h = makeAttachmentHandler(variants, { servePrefix: '/file', thumbPrefix: '/img' });
 
 h.entity(dbRow).cat.first        // ItemView | undefined

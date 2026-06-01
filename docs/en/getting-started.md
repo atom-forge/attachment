@@ -94,7 +94,7 @@ h.avatar.get('photo.jpg') // AttachmentData | undefined
 The client-side handler reads the entity's `attachments` JSON directly — no server round-trip required.
 
 ```ts
-import { makeAttachmentHandler } from '@atom-forge/attachment/client-handler';
+import { makeAttachmentHandler } from '@atom-forge/attachment/client';
 import { imageVariants } from './image-variants.js';
 
 const h = makeAttachmentHandler(imageVariants, { servePrefix: '/file', thumbPrefix: '/img' });
@@ -109,4 +109,4 @@ item?.img.avatar()      // '/img/abc123-3/e.400x400/photo.jpg.webp'
 item?.img.avatar(2)     // '/img/abc123-3/e.800x800/photo.jpg.webp'  (2x retina)
 ```
 
-> Import from leaf files (`client-handler.js`), not the barrel `index.ts`, in browser/SSR components. The barrel re-exports Node.js server modules.
+> In browser/SSR components import from `@atom-forge/attachment/client`. The main package re-exports Node.js server modules.

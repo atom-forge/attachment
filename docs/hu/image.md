@@ -65,7 +65,7 @@ avatar @3x  →  e.1200x1200
 Típusbiztos URL-építő. Bármilyen `AttachmentData<unknown>`-t elfogad — nem szükséges `ImgStat`.
 
 ```ts
-import { buildVariantUrl } from '@atom-forge/attachment';
+import { buildVariantUrl } from '@atom-forge/attachment/client';
 
 buildVariantUrl(imageVariants, attachment, 'avatar')         // 1x, entropy fallback
 buildVariantUrl(imageVariants, attachment, 'avatar', 2)      // 2x
@@ -76,16 +76,16 @@ Mód kiválasztás: explicit arg → `meta.img.c` (ha `imgstat` tárolta) → `'
 
 ---
 
-## `buildThumbnailUrl(attachment, width, height, mode?, prefix?)`
+## `buildImageUrl(attachment, width, height, mode?, prefix?)`
 
 Alacsony szintű URL-építő. `AttachmentData<{ img: ImgStat }>` szükséges, ha a `mode` nincs megadva.
 
 ```ts
-import { buildThumbnailUrl } from '@atom-forge/attachment';
+import { buildImageUrl } from '@atom-forge/attachment/client';
 
-buildThumbnailUrl(attachment, 400, 400)        // meta.img.c-t használja
-buildThumbnailUrl(attachment, 400, 400, 'e')   // explicit mód
-buildThumbnailUrl(attachment, 400, 0, 'a')     // csak szélesség
+buildImageUrl(attachment, 400, 400)        // meta.img.c-t használja
+buildImageUrl(attachment, 400, 400, 'e')   // explicit mód
+buildImageUrl(attachment, 400, 0, 'a')     // csak szélesség
 ```
 
 Kézi fókusznál `meta.img.ch` szükséges (`imgstat` + `FocusHashFn` tölti fel).
@@ -97,7 +97,7 @@ Kézi fókusznál `meta.img.ch` szükséges (`imgstat` + `FocusHashFn` tölti fe
 Kliens oldali factory. Közvetlenül olvassa az entitás `attachments` JSON mezőjét — nincs szerver hívás.
 
 ```ts
-import { makeAttachmentHandler } from '@atom-forge/attachment/client-handler';
+import { makeAttachmentHandler } from '@atom-forge/attachment/client';
 
 const h = makeAttachmentHandler(imageVariants);
 // options: { servePrefix?: string, thumbPrefix?: string }  (alapért.: '/file', '/img')
