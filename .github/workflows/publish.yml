@@ -8,7 +8,6 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: npm
     permissions:
       id-token: write
     env:
@@ -16,11 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bun run build
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
-      - run: bun install
-      - run: bun run build
-      - run: npm publish --access public --ignore-scripts --provenance
-
+      - run: npm publish --access public --ignore-scripts
