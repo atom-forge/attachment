@@ -20,4 +20,6 @@ jobs:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
       - run: bun install
-      - run: npm run release
+      - run: bun run build
+      - run: npm publish --access public --ignore-scripts
+
