@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -17,5 +19,5 @@ jobs:
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
-      - run: npm ci
+      - run: bun install
       - run: npm run release
