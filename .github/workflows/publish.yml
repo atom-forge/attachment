@@ -22,5 +22,7 @@ jobs:
           package-manager-cache: false
       - uses: oven-sh/setup-bun@v2
       - run: bun install
+      - run: npm version ${GITHUB_REF_NAME} --no-git-tag-version
+      - run: bun run scripts/changelog-release.ts
       - run: bun run build
       - run: npm publish --access public --ignore-scripts
