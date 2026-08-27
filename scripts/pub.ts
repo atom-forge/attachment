@@ -11,9 +11,10 @@ if (!["patch", "minor", "major"].includes(bump) && !semverRe.test(bump)) {
 const version = execSync(`npm version ${bump} --no-git-tag-version`, { encoding: "utf-8" }).trim();
 console.log(`📦 Bumped to ${version}`);
 
-execSync(`git add package.json`);
+execSync(`bun run scripts/changelog-release.ts`, { stdio: "inherit" });
+
+execSync(`git add package.json CHANGELOG.md`);
 execSync(`git commit -m "release ${version}"`);
 execSync(`git tag ${version}`);
 execSync(`git push && git push --tags`);
 console.log(`🚀 Tagged and pushed ${version}`);
-

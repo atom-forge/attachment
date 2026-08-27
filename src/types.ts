@@ -101,7 +101,7 @@ export interface ImgStat {
 	h: number;                    // height
 	d: string;                    // dominant color hex (#rrggbb)
 	a: boolean;                   // animated (pages > 1)
-	c: 'e' | 'a' | 'c' | Focus;  // crop mode: entropy | attention | center | focus point
+	c: 'e' | 'a' | 'c' | 'b' | Focus;  // crop mode: entropy | attention | center | box | focus point
 	ch?: string;                  // pre-computed focus hash (manual focus only)
 }
 

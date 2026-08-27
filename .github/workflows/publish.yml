@@ -22,7 +22,13 @@ jobs:
           package-manager-cache: false
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      - run: npm version ${GITHUB_REF_NAME} --no-git-tag-version
-      - run: bun run scripts/changelog-release.ts
+      - run: |
+          current="$(node -p "require('./package.json').version")"
+          target="${GITHUB_REF_NAME#v}"
+          if [ "$current" != "$target" ]; then
+            npm version "$GITHUB_REF_NAME" --no-git-tag-version
+          else
+            echo "package.json already at $current, skipping bump"
+          fi
       - run: bun run build
       - run: npm publish --access public --ignore-scripts

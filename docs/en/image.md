@@ -42,7 +42,7 @@ The thumbnail service derives all allowed sizes from this map automatically (1×
 | `e`  | entropy (default fallback) |
 | `a`  | attention                  |
 | `c`  | centre cover               |
-| `b`  | box / contain (no enlarge) |
+| `b`  | box / inside (fits within, no enlarge) |
 
 **Size notation:** `400x400` = fixed, `400x0` = width-only, `0x400` = height-only.
 

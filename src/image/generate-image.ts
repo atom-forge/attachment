@@ -5,7 +5,7 @@ import type { Focus } from '../types.js';
  *
  * @param sourcePath  Absolute path to the original image.
  * @param mode        Crop mode: `'e'` entropy | `'a'` attention | `'c'` center |
- *                    `'b'` box/contain | `Focus` manual focal point (permille coords).
+ *                    `'b'` box/inside | `Focus` manual focal point (permille coords).
  * @param width       Target width in pixels. Derived from height + aspect ratio if omitted.
  * @param height      Target height in pixels. Derived from width + aspect ratio if omitted.
  * @returns           WebP-encoded Buffer.
@@ -51,7 +51,7 @@ export async function generateImage(
 	if (resolvedMode === 'b') {
 		return pipeline
 			.resize(w, h, {
-				fit: 'contain',
+				fit: 'inside',
 				withoutEnlargement: true,
 				kernel: sharp.kernel.lanczos3,
 			})

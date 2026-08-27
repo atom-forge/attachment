@@ -43,11 +43,12 @@
 		"dist",
 		"docs",
 		"LICENSE",
-		"README.md"
+		"README.md",
+		"CHANGELOG.md"
 	],
 	"scripts": {
 		"build": "rm -rf dist && tsc",
-		"prepublishOnly": "bun run scripts/prepublish.ts && bun run build",
+		"prepublishOnly": "bun run build",
 		"release": "npm publish --access public",
 		"pub-check": "bun run scripts/pub-check.ts",
 		"pub": "bun run scripts/pub.ts"

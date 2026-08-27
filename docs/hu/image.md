@@ -42,7 +42,7 @@ A thumbnail szerviz ebből a térképből automatikusan levezetei az összes eng
 | `e` | entropy (alapértelmezett)    |
 | `a` | attention                    |
 | `c` | középre igazított cover      |
-| `b` | box / contain (nem nagyít)   |
+| `b` | box / inside (belefér, nem nagyít) |
 
 **Méret jelölés:** `400x400` = fix, `400x0` = csak szélesség, `0x400` = csak magasság.
 

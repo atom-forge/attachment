@@ -5,7 +5,8 @@ import type { Focus, FocusHashFn, ImgStat, UploadMiddleware } from '../types.js'
  * Read image metadata (dimensions, dominant color, animated flag, crop mode)
  * from the uploaded file using `sharp` and inject it into `meta.img`.
  *
- * @param cropMode  `'e'` (entropy, default) | `'a'` (attention) | `Focus` (focal point)
+ * @param cropMode  `'e'` (entropy, default) | `'a'` (attention) | `'c'` (center) |
+ *                  `'b'` (box/inside) | `Focus` (focal point)
  *
  * Peer dependency: `sharp` must be installed.
  */
