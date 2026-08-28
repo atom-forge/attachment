@@ -11,6 +11,7 @@ import type { EventEmitter } from '../events/types.js';
 
 export interface S3ProviderConfig {
 	bucket:           string;
+	prefix?:          string;
 	region?:          string;
 	endpoint?:        string;
 	forcePathStyle?:  boolean;
@@ -29,11 +30,13 @@ export function createS3Provider(config: S3ProviderConfig): StorageProvider {
 	});
 
 	let eventManager: EventEmitter | undefined;
+	const prefix = config.prefix?.replace(/^\/+|\/+$/g, '');
 
 	// strips shard prefix: "ab/abcd1234/photo.jpg" → "abcd1234/photo.jpg"
 	function toKey(logicalPath: string): string {
 		const slash = logicalPath.indexOf('/');
-		return slash !== -1 ? logicalPath.slice(slash + 1) : logicalPath;
+		const key = slash !== -1 ? logicalPath.slice(slash + 1) : logicalPath;
+		return prefix ? `${prefix}/${key}` : key;
 	}
 
 	return {

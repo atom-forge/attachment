@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Optional `prefix` configuration for the S3/MinIO provider, allowing multiple logical storage providers to share one bucket under separate object-key namespaces.
+
 ---
 
 ## [0.3.1] - 2026-08-27

@@ -95,6 +95,14 @@ No shard — object storage has no filesystem limitations:
 
 Example: `abc123/photo.jpg`
 
+An optional provider prefix namespaces all object keys. This lets original files and
+generated image variants share one bucket while remaining independently manageable:
+
+```
+files/abc123/photo.jpg
+images/abc123-1.e.400x400.photo.jpg.webp
+```
+
 Saves always set `Cache-Control: public, max-age=31536000, immutable`.
 
 ---
@@ -118,6 +126,7 @@ import { createS3Provider } from '@atom-forge/attachment';
 
 const provider = createS3Provider({
   bucket:          'assets',
+  prefix:          'files/',             // optional object-key namespace
   region:          'eu-central-1',
   endpoint:        'http://minio:9000',  // required for MinIO; omit for AWS S3
   forcePathStyle:  true,                 // required for MinIO
@@ -129,6 +138,7 @@ const provider = createS3Provider({
 | Option          | Required       | Description                                         |
 |-----------------|----------------|-----------------------------------------------------|
 | `bucket`        | yes            | S3 bucket name                                      |
+| `prefix`        | no             | Object-key namespace; leading/trailing slashes are normalized |
 | `region`        | yes            | AWS region                                          |
 | `endpoint`      | MinIO only     | Custom endpoint URL                                 |
 | `forcePathStyle`| MinIO only     | Use `http://host/bucket/key` instead of virtual-hosted style |
@@ -136,6 +146,18 @@ const provider = createS3Provider({
 | `secretAccessKey` | yes          | Secret key                                          |
 
 `rename` is implemented as `CopyObject` + `DeleteObject` (not atomic). If the delete step fails, a `storage:rename-cleanup-failed` event is fired.
+
+### One bucket for originals and image cache
+
+Keep the two-provider setup, but point both providers at the same bucket with
+different prefixes:
+
+```ts
+const sourceProvider = createS3Provider({ bucket: 'assets', prefix: 'files/',  /* ... */ });
+const thumbProvider  = createS3Provider({ bucket: 'assets', prefix: 'images/', /* ... */ });
+```
+
+Lifecycle expiration can then target only `images/`, leaving `files/` untouched.
 
 Dependency: `@aws-sdk/client-s3`
 

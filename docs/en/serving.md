@@ -226,13 +226,16 @@ handle /img/* { reverse_proxy localhost:3000 }
 
 ---
 
-### S3 / MinIO — `/file`
+### S3 / MinIO — `/file` with a `files/` prefix
+
+The examples below assume `sourceProvider` uses `prefix: 'files/'`. Omit `files/`
+from each rewritten target when no prefix is configured.
 
 #### Nginx
 ```nginx
 # AWS S3
 location ~ "^/file/([a-z0-9]+)-[a-z0-9]+/(.+)$" {
-    rewrite "^/file/([a-z0-9]+)-[a-z0-9]+/(.+)$" /$1/$2 break;
+    rewrite "^/file/([a-z0-9]+)-[a-z0-9]+/(.+)$" /files/$1/$2 break;
     proxy_pass https://my-bucket.s3.eu-central-1.amazonaws.com;
     proxy_ssl_server_name on;
     proxy_set_header Host my-bucket.s3.eu-central-1.amazonaws.com;
@@ -240,7 +243,7 @@ location ~ "^/file/([a-z0-9]+)-[a-z0-9]+/(.+)$" {
 
 # MinIO
 location ~ "^/file/([a-z0-9]+)-[a-z0-9]+/(.+)$" {
-    rewrite "^/file/([a-z0-9]+)-[a-z0-9]+/(.+)$" /my-bucket/$1/$2 break;
+    rewrite "^/file/([a-z0-9]+)-[a-z0-9]+/(.+)$" /my-bucket/files/$1/$2 break;
     proxy_pass http://minio:9000;
 }
 ```
@@ -250,10 +253,10 @@ location ~ "^/file/([a-z0-9]+)-[a-z0-9]+/(.+)$" {
 RewriteEngine On
 # AWS S3
 RewriteRule "^/file/([a-z0-9]+)-[a-z0-9]+/(.+)$" \
-    "https://my-bucket.s3.eu-central-1.amazonaws.com/$1/$2" [P,L]
+    "https://my-bucket.s3.eu-central-1.amazonaws.com/files/$1/$2" [P,L]
 # MinIO
 RewriteRule "^/file/([a-z0-9]+)-[a-z0-9]+/(.+)$" \
-    "http://minio:9000/my-bucket/$1/$2" [P,L]
+    "http://minio:9000/my-bucket/files/$1/$2" [P,L]
 ```
 
 #### Caddy
@@ -261,7 +264,7 @@ RewriteRule "^/file/([a-z0-9]+)-[a-z0-9]+/(.+)$" \
 @rawfile path_regexp rawfile "^/file/([a-z0-9]+)-[a-z0-9]+/(.+)$"
 # AWS S3
 handle @rawfile {
-    rewrite * /{http.regexp.rawfile.1}/{http.regexp.rawfile.2}
+    rewrite * /files/{http.regexp.rawfile.1}/{http.regexp.rawfile.2}
     reverse_proxy https://my-bucket.s3.eu-central-1.amazonaws.com {
         header_up Host my-bucket.s3.eu-central-1.amazonaws.com
     }
@@ -270,12 +273,15 @@ handle @rawfile {
 
 ---
 
-### S3 / MinIO — `/img`
+### S3 / MinIO — `/img` with an `images/` prefix
+
+The example below assumes `thumbProvider` uses `prefix: 'images/'`. Replace
+`my-bucket/images` with the thumbnail bucket name when using separate buckets.
 
 #### Nginx
 ```nginx
 location ~ "^/img/([^/]+)/([^/]+)/(.+)$" {
-    rewrite "^/img/([^/]+)/([^/]+)/(.+)$" /my-thumbs/$1.$2.$3 break;
+    rewrite "^/img/([^/]+)/([^/]+)/(.+)$" /my-bucket/images/$1.$2.$3 break;
     proxy_pass http://minio:9000;
     proxy_intercept_errors on;
     error_page 404 = @generate;

@@ -95,6 +95,14 @@ Shard nélkül — az object storage-nak nincs szüksége könyvtár shardingra:
 
 Példa: `abc123/photo.jpg`
 
+Az opcionális provider prefix minden object kulcsot névtérbe tesz. Így az eredeti
+fájlok és a generált képvariantok egy bucketben, mégis külön kezelhetően tárolhatók:
+
+```
+files/abc123/photo.jpg
+images/abc123-1.e.400x400.photo.jpg.webp
+```
+
 A mentések mindig `Cache-Control: public, max-age=31536000, immutable` headert állítanak be.
 
 ---
@@ -118,6 +126,7 @@ import { createS3Provider } from '@atom-forge/attachment';
 
 const provider = createS3Provider({
   bucket:          'assets',
+  prefix:          'files/',             // opcionális object-kulcs névtér
   region:          'eu-central-1',
   endpoint:        'http://minio:9000',  // MinIO-nál kötelező; AWS S3-nál elhagyható
   forcePathStyle:  true,                 // MinIO-nál szükséges
@@ -129,6 +138,7 @@ const provider = createS3Provider({
 | Opció             | Kötelező       | Leírás                                                           |
 |-------------------|----------------|------------------------------------------------------------------|
 | `bucket`          | igen           | S3 bucket neve                                                   |
+| `prefix`          | nem            | Object-kulcs névtér; a kezdő/záró perjelek normalizálódnak     |
 | `region`          | igen           | AWS régió                                                        |
 | `endpoint`        | csak MinIO     | Egyedi endpoint URL                                              |
 | `forcePathStyle`  | csak MinIO     | `http://host/bucket/key` formátum (virtuális-hosted helyett)     |
@@ -136,6 +146,17 @@ const provider = createS3Provider({
 | `secretAccessKey` | igen           | Secret key                                                       |
 
 A `rename` `CopyObject` + `DeleteObject` hívásokkal valósul meg (nem atomikus). Ha a törlési lépés sikertelen, `storage:rename-cleanup-failed` esemény váltódik ki.
+
+### Egy bucket az eredeti fájloknak és a képcache-nek
+
+Marad a két provideres modell, de mindkét provider ugyanarra a bucketre mutat eltérő prefixszel:
+
+```ts
+const sourceProvider = createS3Provider({ bucket: 'assets', prefix: 'files/',  /* ... */ });
+const thumbProvider  = createS3Provider({ bucket: 'assets', prefix: 'images/', /* ... */ });
+```
+
+Így a lifecycle szabály csak az `images/` prefixet törölheti, a `files/` érintetlen marad.
 
 Függőség: `@aws-sdk/client-s3`
 
