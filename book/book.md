@@ -13,6 +13,7 @@ children:
   - "[[04-image.md]]"
   - "[[05-serving.md]]"
   - "[[06-storage.md]]"
+  - "[AI Notes](ai-notes.md)"
 ---
 # @atom-forge/attachment
 
