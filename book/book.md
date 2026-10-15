@@ -1,5 +1,5 @@
 ---
-name: Attachment
+title: Attachment
 subtitle: "@atom-forge/attachment"
 language: en
 id: atom-forge-attachment
