@@ -3,7 +3,7 @@ name: Attachment
 subtitle: "@atom-forge/attachment"
 language: en
 id: atom-forge-attachment
-author: Gergely Laborci
+author: AtomForge
 tags: [attachment, prisma, typescript]
 intro: Portable, framework-agnostic file attachment system for Prisma entities.
 children:
