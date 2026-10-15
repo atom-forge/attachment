@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `book/` folder: the English documentation as a BookMD collection (a single `book.md` entry file and six chapters), with callouts and Mermaid diagrams for upload flow, rollback, middleware pipeline, mode resolution, proxy flow and version bumping, plus a book introduction, chapter leads and short explanations before each diagram to make it easier to read.
+
 ---
 
 ## [0.3.3] - 2026-10-07
