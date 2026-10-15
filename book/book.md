@@ -1,5 +1,6 @@
 ---
-name: "@atom-forge/attachment"
+name: Attachment
+subtitle: "@atom-forge/attachment"
 language: en
 id: atom-forge-attachment
 author: Gergely Laborci
