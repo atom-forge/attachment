@@ -10,6 +10,21 @@ type UploadMiddleware<TMeta = unknown> = (
 ) => Promise<{ file: File; meta: TMeta }>;
 ```
 
+A middleware-eket kategóriánként adod meg, a kategória objektum `middlewares` tömbjében (minden kategóriának kötelező a kétkarakteres `code` is, lásd [Handler API](handler-api.md)):
+
+```ts
+import { defineAttachments, createLocalProvider, count, mime, toWebP, imgstat } from '@atom-forge/attachment';
+
+const attachments = defineAttachments({
+  user: defineAttachments.entity({
+    avatar:  { code: 'AV', middlewares: [count(1), mime('image/*'), toWebP(80, 400, 400), imgstat()] },
+    gallery: { code: 'GA', middlewares: [mime('image/*'), toWebP(80)] },
+  }),
+}, { provider: createLocalProvider('./var/uploads') });
+```
+
+A middleware a kapott `meta` módosítása helyett új `meta` objektumot adjon vissza: a hívó ugyanazt a meta objektumot több feltöltéshez is felhasználhatja. A beépített transzformátorok így működnek.
+
 ---
 
 ## Validátorok
@@ -64,7 +79,7 @@ Peer függőségeket igényelnek (`sharp`, `music-metadata`).
 
 ### `toWebP(lossy?, width?, height?)`
 
-A feltöltött képet WebP formátumba konvertálja.
+A feltöltött képet WebP formátumba konvertálja. Alkalmazza az EXIF tájolást (a telefonos fotók nem kerülnek oldalra fordítva tárolásra), az animált GIF/WebP képek pedig megtartják az összes képkockájukat.
 
 | Paraméter | Típus             | Alapért. | Leírás                                                                                     |
 |-----------|-------------------|----------|--------------------------------------------------------------------------------------------|
@@ -83,29 +98,41 @@ Peer függőség: `sharp`
 
 ### `imgstat(cropMode?, focusHash?)`
 
-Olvassa a kép méretét, domináns színét, animált jelzőjét és vágási módját. Egy `ImgStat` objektumot injektál a `meta.img`-be.
+Olvassa a kép méretét, domináns színét, animált jelzőjét és vágási módját. Új meta objektumot ad vissza, benne egy `ImgStat`-tal a `meta.img` alatt (a hívó meta objektumát nem módosítja). A méretek a megjelenített méretek: 5–8-as EXIF tájolásnál a szélesség és a magasság felcserélődik.
 
-| Paraméter   | Típus                        | Alapért. | Leírás                                             |
-|-------------|------------------------------|----------|----------------------------------------------------|
-| `cropMode`  | `'e' \| 'a' \| 'c' \| Focus` | `'e'`    | Tárolt vágási stratégia a thumbnail URL építéshez  |
-| `focusHash` | `FocusHashFn`                | —        | Szükséges `meta.img.ch` tárolásához kézi fókusznál |
+| Paraméter   | Típus                               | Alapért. | Leírás                                             |
+|-------------|-------------------------------------|----------|----------------------------------------------------|
+| `cropMode`  | `'e' \| 'a' \| 'c' \| 'b' \| Focus` | `'e'`    | Tárolt vágási stratégia a thumbnail URL építéshez  |
+| `focusHash` | `FocusHashFn`                       | —        | Szükséges `meta.img.ch` tárolásához kézi fókusznál |
 
 ```ts
 imgstat()        // entropy vágás (alapértelmezett)
 imgstat('a')     // attention vágás
 imgstat('c')     // középre vágás
-imgstat({x: 500, y: 300, s: {x: 0, y: 0, w: 1000, h: 1000}})  // kézi fókuszpont
+imgstat('b')     // box: belefér, nincs vágás
+imgstat({x: 500, y: 300, s: {x: 0, y: 0, w: 1000, h: 1000}}, focusHash)  // kézi fókuszpont (lásd lent)
 ```
 
-Az injektált `ImgStat`:
+**Kézi fókusz.** A kép szerver fókuszos URL-t csak érvényes hash-sel fogad el. A hash függvényt a `createFocusHash(secret)` hozza létre (csak szerver oldali export); ugyanazt a titkot használd, mint a `createImageServer({ focusSecret })`:
+
+```ts
+import { imgstat, createFocusHash } from '@atom-forge/attachment';
+
+const focusHash = createFocusHash(process.env.FOCUS_SECRET!);   // ugyanaz a titok, mint a kép szervernél
+imgstat({x: 500, y: 300, s: {x: 0, y: 0, w: 1000, h: 1000}}, focusHash)
+```
+
+Az `imgstat` a hash-t a `meta.img.ch`-ba menti, a kliens ezt teszi az URL-be. `focusHash` nélkül a `meta.img.ch` hiányzik, és a kliens a tárolt fókusz helyett `'e'`-re esik vissza.
+
+A tárolt `ImgStat`:
 
 ```ts
 interface ImgStat {
-	w: number;                    // szélesség px
-	h: number;                    // magasság px
+	w: number;                    // megjelenített szélesség px
+	h: number;                    // megjelenített magasság px
 	d: string;                    // domináns szín (#rrggbb)
 	a: boolean;                   // animált (GIF / animált WebP)
-	c: 'e' | 'a' | 'c' | Focus;  // tárolt vágási mód
+	c: 'e' | 'a' | 'c' | 'b' | Focus;  // tárolt vágási mód
 	ch?: string;                    // HMAC hash a focus12-ből (csak kézi fókusznál)
 }
 ```
@@ -120,7 +147,7 @@ Peer függőség: `sharp`
 
 ### `getMp3Duration(metaKey?)`
 
-Olvassa az MP3 időtartamát és injektálja a `meta[metaKey]`-be (másodpercben, szám). Alapértelmezett `metaKey`: `'duration'`.
+Olvassa az MP3 időtartamát, és új meta objektumot ad vissza, benne a `meta[metaKey]` alatt (másodpercben, szám; a hívó meta objektumát nem módosítja). Alapértelmezett `metaKey`: `'duration'`.
 
 ```ts
 getMp3Duration()                  // → meta.duration

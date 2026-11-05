@@ -1,4 +1,6 @@
+import mime from 'mime';
 import { AttachmentValidationError } from './types.js';
+import { isSafeFilename } from './safe-path.js';
 import type {
 	AttachmentData,
 	AttachmentItem,
@@ -9,11 +11,22 @@ import type {
 	CategoryInput,
 } from './types.js';
 import type { EventEmitter } from './events/types.js';
+import {
+	CATEGORY_REGISTRY,
+	CODE_PATTERN,
+	encodeEntityId,
+	makeGroupId,
+	parseGroupId,
+	type CategoryRegistry,
+	type EntityIdType,
+} from './group-id.js';
 
 // --- Config types ---
 
 export interface EntityOptions {
 	idField?: string;
+	/** How the entity id is encoded into group ids (base36). Default: 'int'. */
+	idType?:  EntityIdType;
 }
 
 export interface EntityDefinition<TCategories extends Record<string, CategoryInput>> {
@@ -37,7 +50,7 @@ export function physicalPath(groupId: string, filename: string): string {
 }
 
 function serveUrl(prefix: string, groupId: string, version: string, filename: string): string {
-	return `${prefix}/${groupId}-${version}/${filename}`;
+	return `${prefix}/${groupId}-${version}/${encodeURIComponent(filename)}`;
 }
 
 function readStore(entity: EntityRecord): AttachmentsStore {
@@ -45,14 +58,31 @@ function readStore(entity: EntityRecord): AttachmentsStore {
 	return r && typeof r === 'object' && !Array.isArray(r) ? (r as AttachmentsStore) : {};
 }
 
-const defaultSanitize = (name: string): string =>
-	name
-		.normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // remove diacritics
-		.replace(/[^a-zA-Z0-9_.]/g, '-')                   // non-alphanumeric → dash
-		.replace(/(^[-.]+)|([-._]+)$/g, '')                // strip leading/trailing separators
-		.replace(/-+/g, '-')                               // collapse dashes
-		.replace(/\\.[-]/g, '.')                           // dot-dash → dot
-		.replace(/[-.]\./g, '.');                          // dash/dot before dot → dot
+// Stem and extension are cleaned separately, so a stem made only of non-ASCII
+// characters ("фото.jpg") cannot swallow the extension dot. Never returns ''.
+const defaultSanitize = (name: string): string => {
+	const ascii = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '');  // remove diacritics
+	const dot   = ascii.lastIndexOf('.');
+	const stem = (dot >= 0 ? ascii.slice(0, dot) : ascii)
+		.replace(/[^a-zA-Z0-9_.]/g, '-')   // other characters → dash
+		.replace(/-+/g, '-')               // collapse dashes
+		.replace(/[-.]*\.[-.]*/g, '.')     // dots with dashes around → one dot
+		.replace(/^[-._]+|[-._]+$/g, '')   // strip leading/trailing separators
+		|| 'file';
+	const ext = dot >= 0 ? ascii.slice(dot + 1).replace(/[^a-zA-Z0-9]/g, '') : '';
+	return ext ? `${stem}.${ext}` : stem;
+};
+
+/** Item version: base36 counter plus a random suffix, so future version URLs cannot be guessed and pre-cached. */
+function makeVersion(counter: number): string {
+	const rnd = crypto.getRandomValues(new Uint32Array(1))[0].toString(36).padStart(7, '0').slice(-6);
+	return `${counter.toString(36)}${rnd}`;
+}
+
+function extensionOf(name: string): string {
+	const dot = name.lastIndexOf('.');
+	return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+}
 
 const defaultFindUnique = (existing: string[], name: string): string => {
 	if (!existing.includes(name)) return name;
@@ -64,6 +94,33 @@ const defaultFindUnique = (existing: string[], name: string): string => {
 		if (!existing.includes(candidate)) return candidate;
 	}
 };
+
+function assertCategoryConfig(input: unknown, where: string): asserts input is CategoryInput {
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw new Error(`${where}: a category must be an object like { code: 'AV', middlewares: [...] }.`);
+	}
+	const code = (input as { code?: unknown }).code;
+	if (typeof code !== 'string' || !CODE_PATTERN.test(code)) {
+		throw new Error(`${where}: code ${JSON.stringify(code)} must be exactly two characters [A-Z0-9].`);
+	}
+}
+
+// Async mutations of one entity object run one after another, so a call never
+// works from a store snapshot that another call is about to overwrite.
+const entityLocks = new WeakMap<object, Promise<unknown>>();
+
+function serialize<T>(entity: object, fn: () => Promise<T>): Promise<T> {
+	const previous = entityLocks.get(entity) ?? Promise.resolve();
+	const run = previous.then(fn, fn);
+	entityLocks.set(entity, run.catch(() => {}));
+	return run;
+}
+
+function assertSafeFilename(filename: string, category: string): void {
+	if (!isSafeFilename(filename)) {
+		throw new AttachmentValidationError(`Invalid filename "${filename}" in "${category}".`);
+	}
+}
 
 // --- Category handler ---
 
@@ -90,7 +147,30 @@ function makeCategoryHandler<TMeta>(
 	sanitizeFn: ((name: string) => string) | false,
 	findUniqueFn: (existing: string[], name: string) => string,
 	eventManager: EventEmitter | undefined,
+	code: string,
+	idType: EntityIdType,
 ): CategoryHandler<TMeta> {
+	function encodedEntityId(): string {
+		try {
+			return encodeEntityId(entityId, idType);
+		} catch (err) {
+			throw new Error(
+				`${entityType}.${category}: ${(err as Error).message} Attachments need a saved entity with an id of type "${idType}".`,
+			);
+		}
+	}
+
+	// The stored group id must be the composite key of THIS entity and category.
+	// Legacy group ids (without code and entity id) are not supported.
+	function assertWritableGroup(groupId: string): void {
+		const parsed = parseGroupId(groupId);
+		if (!parsed || parsed.code !== code || parsed.encodedId !== encodedEntityId()) {
+			throw new AttachmentValidationError(
+				`${entityType}.${category}: stored group id "${groupId}" does not belong to ${entityType} ${entityId} / ${code}.`,
+			);
+		}
+	}
+
 	function getCategoryStore(): CategoryStore | undefined {
 		return readStore(entity)[category];
 	}
@@ -144,86 +224,122 @@ function makeCategoryHandler<TMeta>(
 			return item ? toPublic(item, store.i) : undefined;
 		},
 
-		async add(file: File, meta: TMeta) {
-			const p = requireProvider();
-			const currentStore = getCategoryStore();
-			const currentItems = getItems();
-			const publicList = currentStore
-				? currentItems.map((item) => toPublic(item, currentStore.i))
-				: [];
+		add(file: File, meta: TMeta) {
+			return serialize(entity, async () => {
+				const p = requireProvider();
+				const startStore = getCategoryStore();
+				const publicList = startStore
+					? startStore.f.map((item) => toPublic(item, startStore.i))
+					: [];
 
-			const { file: f, meta: m } = await runMiddlewares(file, meta, publicList);
+				const { file: f, meta: m } = await runMiddlewares(file, meta, publicList);
 
-			let groupId = currentStore?.i;
-			if (!groupId) {
-				groupId = await (nextGroupId ?? defaultNextGroupId)(entityType, entityId, category);
-			}
-			const vs = (currentStore?.v ?? 0) + 1;
-			const version = vs.toString(36);
-			const rawName = sanitizeFn ? sanitizeFn(f.name) : f.name;
-			const filename = findUniqueFn(currentItems.map((a) => a.n), rawName);
-			const path = physicalPath(groupId, filename);
+				let groupId = getCategoryStore()?.i;
+				if (!groupId) {
+					encodedEntityId();  // fail early with a clear message for unsaved entities
+					groupId = makeGroupId(await (nextGroupId ?? defaultNextGroupId)(entityType, entityId, category), code, entityId, idType);
+				}
+				assertWritableGroup(groupId);
+				const rawName = sanitizeFn ? sanitizeFn(f.name) : f.name;
+				const filename = findUniqueFn(getItems().map((a) => a.n), rawName);
+				assertSafeFilename(filename, category);
+				const path = physicalPath(groupId, filename);
 
-			await p.save(path, f);
+				await p.save(path, f);
 
-			const newItem: AttachmentItem = {
-				n: filename,
-				v: version,
-				s: f.size,
-				t: Math.floor(Date.now() / 1000),
-				x: m,
-			};
-			const updatedStore: CategoryStore = {
-				i: groupId,
-				v: vs,
-				f: [...(currentStore?.f ?? []), newItem],
-			};
-			const raw = readStore(entity);
-			raw[category] = updatedStore;
-			entity.attachments = raw;
+				// Re-read: synchronous calls (updateMeta, reorder) may have changed the store meanwhile.
+				const fresh = getCategoryStore();
+				const vs = (fresh?.v ?? 0) + 1;
+				const newItem: AttachmentItem = {
+					n: filename,
+					v: makeVersion(vs),
+					s: f.size,
+					t: Math.floor(Date.now() / 1000),
+					x: m,
+				};
+				const raw = readStore(entity);
+				raw[category] = { i: groupId, v: vs, f: [...(fresh?.f ?? []), newItem] };
+				entity.attachments = raw;
 
-			const attachment = toPublic(newItem, groupId);
-			eventManager?.trigger({ type: 'attachment:add', entityType, entityId, category, groupId, attachment });
-			return { attachment, rollback: () => p.delete(path) };
+				const attachment = toPublic(newItem, groupId);
+				eventManager?.trigger({ type: 'attachment:add', entityType, entityId, category, groupId, attachment });
+				return { attachment, rollback: () => p.delete(path) };
+			});
 		},
 
-		async replace(filename: string, file: File, meta: TMeta) {
-			const p = requireProvider();
-			const currentItems = getItems();
-			const currentStore = getCategoryStore();
-			const idx = currentItems.findIndex((a) => a.n === filename);
-			if (idx === -1) throw new AttachmentValidationError(`File "${filename}" not found in "${category}".`);
-			if (!currentStore) throw new AttachmentValidationError(`Category "${category}" store is missing.`);
+		replace(filename: string, file: File, meta: TMeta) {
+			return serialize(entity, async () => {
+				const p = requireProvider();
+				const startStore = getCategoryStore();
+				if (!startStore) throw new AttachmentValidationError(`File "${filename}" not found in "${category}".`);
+				if (!startStore.f.some((a) => a.n === filename)) {
+					throw new AttachmentValidationError(`File "${filename}" not found in "${category}".`);
+				}
 
-			const publicList = currentItems
-				.filter((item) => item.n !== filename)
-				.map((item) => toPublic(item, currentStore.i));
-			const { file: f, meta: m } = await runMiddlewares(file, meta, publicList);
+				const publicList = startStore.f
+					.filter((item) => item.n !== filename)
+					.map((item) => toPublic(item, startStore.i));
+				const { file: f, meta: m } = await runMiddlewares(file, meta, publicList);
+				// replace() keeps the stored filename, so the content must keep its type too
+				// (e.g. toWebP() turns an upload into .webp: replacing "a.jpg" with WebP bytes would mislabel it).
+				const newName = sanitizeFn ? sanitizeFn(f.name) : f.name;
+				if (extensionOf(newName) !== extensionOf(filename)) {
+					throw new AttachmentValidationError(
+						`replace("${filename}") in "${category}": the processed file is "${newName}", its extension differs. Delete and add it instead.`,
+					);
+				}
 
-			const groupId = currentStore.i;
-			const vs = currentStore.v + 1;
-			const version = vs.toString(36);
-			const path = physicalPath(groupId, filename);
+				const groupId = startStore.i;
+				assertWritableGroup(groupId);
+				const path = physicalPath(groupId, filename);
 
-			await p.save(path, f);
+				// Keep the original bytes so rollback can put them back (replace overwrites in place).
+				let original: Buffer | undefined;
+				try {
+					original = await p.read(path);
+				} catch {
+					original = undefined;  // original file already missing: rollback just removes the new one
+				}
+				const restore = async () => {
+					if (!original) return p.delete(path);
+					const type = mime.getType(filename) ?? 'application/octet-stream';
+					await p.save(path, new File([new Uint8Array(original)], filename, { type }));
+				};
 
-			const updatedItem: AttachmentItem = {
-				n: filename,
-				v: version,
-				s: f.size,
-				t: Math.floor(Date.now() / 1000),
-				x: m,
-			};
-			const newItems = [...currentItems];
-			newItems[idx] = updatedItem;
-			const raw = readStore(entity);
-			raw[category] = { ...currentStore, v: vs, f: newItems };
-			entity.attachments = raw;
+				try {
+					await p.save(path, f);
+				} catch (err) {
+					await restore().catch(() => {});
+					throw err;
+				}
 
-			const oldAttachment = toPublic(currentItems[idx], groupId);
-			const attachment    = toPublic(updatedItem, groupId);
-			eventManager?.trigger({ type: 'attachment:replace', entityType, entityId, category, groupId, oldAttachment, attachment });
-			return { attachment, rollback: () => p.delete(path) };
+				// Re-read: synchronous calls (updateMeta, reorder) may have changed the store meanwhile.
+				const fresh = getCategoryStore() ?? startStore;
+				const idx = fresh.f.findIndex((a) => a.n === filename);
+				if (idx === -1) {
+					await restore().catch(() => {});
+					throw new AttachmentValidationError(`File "${filename}" not found in "${category}".`);
+				}
+				const vs = fresh.v + 1;
+				const updatedItem: AttachmentItem = {
+					n: filename,
+					v: makeVersion(vs),
+					s: f.size,
+					t: Math.floor(Date.now() / 1000),
+					x: m,
+				};
+				const newItems = [...fresh.f];
+				const oldItem = newItems[idx];
+				newItems[idx] = updatedItem;
+				const raw = readStore(entity);
+				raw[category] = { ...fresh, v: vs, f: newItems };
+				entity.attachments = raw;
+
+				const oldAttachment = toPublic(oldItem, groupId);
+				const attachment    = toPublic(updatedItem, groupId);
+				eventManager?.trigger({ type: 'attachment:replace', entityType, entityId, category, groupId, oldAttachment, attachment });
+				return { attachment, rollback: restore };
+			});
 		},
 
 		updateMeta(filename: string, meta: TMeta): AttachmentData<TMeta> {
@@ -234,8 +350,7 @@ function makeCategoryHandler<TMeta>(
 			if (!currentStore) throw new AttachmentValidationError(`Category "${category}" store is missing.`);
 
 			const vs = currentStore.v + 1;
-			const version = vs.toString(36);
-			const updatedItem: AttachmentItem = { ...currentItems[idx], v: version, x: meta };
+			const updatedItem: AttachmentItem = { ...currentItems[idx], v: makeVersion(vs), x: meta };
 			const newItems = [...currentItems];
 			newItems[idx] = updatedItem;
 			const raw = readStore(entity);
@@ -246,41 +361,43 @@ function makeCategoryHandler<TMeta>(
 			return attachment;
 		},
 
-		async rename(oldName: string, newName: string): Promise<void> {
-			const p = requireProvider();
-			const currentItems = getItems();
-			const currentStore = getCategoryStore();
-			const idx = currentItems.findIndex((a) => a.n === oldName);
-			if (idx === -1) throw new AttachmentValidationError(`File "${oldName}" not found in "${category}".`);
-			if (!currentStore) throw new AttachmentValidationError(`Category "${category}" store is missing.`);
+		rename(oldName: string, newName: string): Promise<void> {
+			return serialize(entity, async () => {
+				const p = requireProvider();
+				const currentStore = getCategoryStore();
+				if (!currentStore || !currentStore.f.some((a) => a.n === oldName)) {
+					throw new AttachmentValidationError(`File "${oldName}" not found in "${category}".`);
+				}
 
-			const sanitized = sanitizeFn ? sanitizeFn(newName) : newName;
-			if (currentItems.some((a) => a.n === sanitized && a.n !== oldName)) {
-				throw new AttachmentValidationError(`File "${sanitized}" already exists in "${category}".`);
-			}
+				const sanitized = sanitizeFn ? sanitizeFn(newName) : newName;
+				assertSafeFilename(sanitized, category);
+				if (currentStore.f.some((a) => a.n === sanitized && a.n !== oldName)) {
+					throw new AttachmentValidationError(`File "${sanitized}" already exists in "${category}".`);
+				}
 
-			const oldPath = physicalPath(currentStore.i, oldName);
-			const newPath = physicalPath(currentStore.i, sanitized);
-			await p.rename(oldPath, newPath);
+				await p.rename(physicalPath(currentStore.i, oldName), physicalPath(currentStore.i, sanitized));
 
-			const updatedItem: AttachmentItem = { ...currentItems[idx], n: sanitized };
-			const newItems = [...currentItems];
-			newItems[idx] = updatedItem;
-			setItems(newItems, currentStore);
-			eventManager?.trigger({ type: 'attachment:rename', entityType, entityId, category, groupId: currentStore.i, oldName, newName: sanitized });
+				// Re-read: synchronous calls (updateMeta, reorder) may have changed the store meanwhile.
+				const fresh = getCategoryStore() ?? currentStore;
+				setItems(fresh.f.map((a) => (a.n === oldName ? { ...a, n: sanitized } : a)), fresh);
+				eventManager?.trigger({ type: 'attachment:rename', entityType, entityId, category, groupId: fresh.i, oldName, newName: sanitized });
+			});
 		},
 
-		async delete(filename: string): Promise<void> {
-			const p = requireProvider();
-			const currentItems = getItems();
-			const currentStore = getCategoryStore();
-			const idx = currentItems.findIndex((a) => a.n === filename);
-			if (idx === -1) throw new AttachmentValidationError(`File "${filename}" not found in "${category}".`);
-			if (!currentStore) throw new AttachmentValidationError(`Category "${category}" store is missing.`);
+		delete(filename: string): Promise<void> {
+			return serialize(entity, async () => {
+				const p = requireProvider();
+				const currentStore = getCategoryStore();
+				if (!currentStore || !currentStore.f.some((a) => a.n === filename)) {
+					throw new AttachmentValidationError(`File "${filename}" not found in "${category}".`);
+				}
 
-			await p.delete(physicalPath(currentStore.i, filename));
-			setItems(currentItems.filter((_, i) => i !== idx), currentStore);
-			eventManager?.trigger({ type: 'attachment:delete', entityType, entityId, category, groupId: currentStore.i, filename });
+				await p.delete(physicalPath(currentStore.i, filename));
+
+				const fresh = getCategoryStore() ?? currentStore;
+				setItems(fresh.f.filter((a) => a.n !== filename), fresh);
+				eventManager?.trigger({ type: 'attachment:delete', entityType, entityId, category, groupId: fresh.i, filename });
+			});
 		},
 
 		reorder(filenames: string[]): void {
@@ -288,6 +405,11 @@ function makeCategoryHandler<TMeta>(
 			const currentStore = getCategoryStore();
 			if (!currentStore) throw new AttachmentValidationError(`Category "${category}" store is missing.`);
 
+			if (filenames.length !== currentItems.length || new Set(filenames).size !== filenames.length) {
+				throw new AttachmentValidationError(
+					`reorder() in "${category}" needs every current filename exactly once (got ${filenames.length}, have ${currentItems.length}).`,
+				);
+			}
 			const byName = new Map(currentItems.map((a) => [a.n, a]));
 			const reordered = filenames.map((name) => {
 				const a = byName.get(name);
@@ -318,30 +440,48 @@ function makeEntityHandler<TCategories extends Record<string, CategoryInput>>(
 	eventManager: EventEmitter | undefined,
 ) {
 	const idField = entityDef._options.idField ?? 'id';
+	const idType  = entityDef._options.idType ?? 'int';
+	const categories = entityDef.categories as Record<string, CategoryInput>;
+	const providerFor = (category: string) => categories[category]?.provider ?? provider;
 
 	return function (entity: EntityRecord): AttachmentHandler<TCategories> {
 		const entityId = String(entity[idField]);
 		const result = {} as AttachmentHandler<TCategories>;
 
-		for (const category of Object.keys(entityDef.categories) as (keyof TCategories & string)[]) {
-			const input = entityDef.categories[category];
-			const middlewares = Array.isArray(input) ? input : [];
+		for (const category of Object.keys(categories)) {
+			const config = categories[category];
 			(result as Record<string, CategoryHandler>)[category] = makeCategoryHandler(
-				entityType, entityId, category, middlewares, entity, provider, nextGroupId, servePrefix, sanitizeFn, findUniqueFn, eventManager,
+				entityType, entityId, category, config.middlewares ?? [], entity, providerFor(category), nextGroupId, servePrefix, sanitizeFn, findUniqueFn, eventManager, config.code, idType,
 			);
 		}
 
-		(result as unknown as { purge(): Promise<void> }).purge = async function (): Promise<void> {
-			if (!provider) throw new Error('No StorageProvider configured.');
+		(result as unknown as { purge(): Promise<void> }).purge = () => serialize(entity, async (): Promise<void> => {
 			const raw = readStore(entity);
-			for (const store of Object.values(raw)) {
+			// Best effort: try every file, keep only the stores whose files could not be deleted.
+			const failed: Record<string, CategoryStore> = {};
+			const errors: unknown[] = [];
+			for (const [category, store] of Object.entries(raw)) {
+				const p = providerFor(category);
+				const left: AttachmentItem[] = [];
 				for (const item of store.f) {
-					await provider.delete(physicalPath(store.i, item.n));
+					try {
+						if (!p) throw new Error('No StorageProvider configured.');
+						await p.delete(physicalPath(store.i, item.n));
+					} catch (err) {
+						left.push(item);
+						errors.push(err);
+					}
 				}
+				if (left.length) failed[category] = { ...store, f: left };
 			}
-			entity.attachments = {};
+			entity.attachments = failed;
+			if (errors.length) {
+				const error = new Error(`purge(): ${errors.length} file(s) could not be deleted; they are kept in entity.attachments.`);
+				(error as Error & { errors: unknown[] }).errors = errors;
+				throw error;
+			}
 			eventManager?.trigger({ type: 'attachment:purge', entityType, entityId });
-		};
+		});
 
 		return result;
 	};
@@ -378,10 +518,32 @@ export const defineAttachments: DefineAttachmentsFn = Object.assign(
 		if (provider && eventManager) provider.setEventManager?.(eventManager);
 		const result = {} as { [K in keyof TConfig]: (entity: EntityRecord) => AttachmentHandler<TConfig[K]['categories']> };
 
+		const registry: CategoryRegistry = new Map();
+		for (const [entityType, def] of Object.entries(config)) {
+			for (const [category, input] of Object.entries(def.categories)) {
+				const where = `${entityType}.${category}`;
+				assertCategoryConfig(input, where);
+				const existing = registry.get(input.code);
+				if (existing) {
+					throw new Error(`${where}: code "${input.code}" is already used by ${existing.entityType}.${existing.category}.`);
+				}
+				if (input.provider && eventManager) input.provider.setEventManager?.(eventManager);
+				registry.set(input.code, {
+					entityType,
+					category,
+					code:      input.code,
+					idType:    def._options.idType ?? 'int',
+					authorize: input.authorize,
+					provider:  input.provider ?? provider,
+				});
+			}
+		}
+
 		for (const key of Object.keys(config) as (keyof TConfig & string)[]) {
 			result[key] = makeEntityHandler(key, config[key], provider, nextGroupId, servePrefix, sanitizeFn, findUniqueFn, eventManager) as typeof result[typeof key];
 		}
 
+		Object.defineProperty(result, CATEGORY_REGISTRY, { value: registry, enumerable: false });
 		return result;
 	},
 	{

@@ -13,13 +13,15 @@
         "music-metadata": "^11.12.3",
         "sharp": "^0.34.5",
         "typescript": "^6.0.2",
-        "zod": "^4.3.6",
       },
       "peerDependencies": {
         "music-metadata": ">=11.12.0",
         "sharp": ">=0.32.0",
-        "zod": ">=4.0.0",
       },
+      "optionalPeers": [
+        "music-metadata",
+        "sharp",
+      ],
     },
   },
   "packages": {
@@ -228,7 +230,5 @@
     "win-guid": ["win-guid@0.2.1", "", {}, "sha512-gEIQU4mkgl2OPeoNrWflcJFJ3Ae2BPd4eCsHHA/XikslkIVms/nHhvnvzIZV7VLmBvtFlDOzLt9rrZT+n6D67A=="],
 
     "xml-naming": ["xml-naming@0.1.0", "", {}, "sha512-k8KO9hrMyNk6tUWqUfkTEZbezRRpONVOzUTnc97VnCvyj6Tf9lyUR9EDAIeiVLv56jsMcoXEwjW8Kv5yPY52lw=="],
-
-    "zod": ["zod@4.3.6", "", {}, "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="],
   }
 }

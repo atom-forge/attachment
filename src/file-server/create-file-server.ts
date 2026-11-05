@@ -1,23 +1,17 @@
 import mime from 'mime';
-import path from 'node:path';
-
-// ---------------------------------------------------------------------------
-// Driver interface — swap Bun vs Node implementations
-// ---------------------------------------------------------------------------
-
-export interface FileServerDriver {
-	exists(fullPath: string): Promise<boolean>;
-	serve(fullPath: string, contentType: string): Promise<Response>;
-}
+import type { StorageProvider } from '../types.js';
+import { physicalPath } from '../define-attachments.js';
+import { getRegistry, resolveGroup } from '../group-id.js';
+import { isSafeFilename, isSafeGroupId } from '../safe-path.js';
 
 // ---------------------------------------------------------------------------
 // createFileServer
 // ---------------------------------------------------------------------------
 
 export interface FileServerOptions {
-	uploadDir:    string;
+	/** The object returned by `defineAttachments`: maps a URL's category code to its provider and `authorize`. */
+	attachments:  object;
 	servePrefix?: string;  // default: '/file'
-	driver:       FileServerDriver;
 }
 
 export interface FileServerHandler {
@@ -25,10 +19,42 @@ export interface FileServerHandler {
 	handle(request: Request): Promise<Response>;
 }
 
+export const PUBLIC_CACHE  = 'public, max-age=31536000, immutable';
+export const PRIVATE_CACHE = 'private, no-store';
+
+// Types a browser would run as a page/script on our origin: always downloaded, never rendered inline.
+const ACTIVE_TYPES = new Set([
+	'text/html', 'application/xhtml+xml', 'image/svg+xml', 'text/xml', 'application/xml',
+	'text/javascript', 'application/javascript', 'application/x-javascript',
+]);
+
+/** Security headers for every served file: no MIME sniffing; active content is forced to download. */
+export function applySecurityHeaders(headers: Headers, filename: string, contentType: string): void {
+	headers.set('X-Content-Type-Options', 'nosniff');
+	if (ACTIVE_TYPES.has(contentType)) {
+		headers.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+		headers.set('Content-Security-Policy', "default-src 'none'; sandbox");
+	}
+}
+
+function streamResponse(provider: StorageProvider, logicalPath: string, filename: string, cacheControl: string): Response {
+	const contentType = mime.getType(filename) ?? 'application/octet-stream';
+	const headers = new Headers({ 'Content-Type': contentType, 'Cache-Control': cacheControl });
+	applySecurityHeaders(headers, filename, contentType);
+	return new Response(provider.stream(logicalPath), { headers });
+}
+
+/**
+ * Serves `/{servePrefix}/{groupId}-{version}/{filename}`.
+ *
+ * The category code inside the group id selects the category: its provider is read,
+ * and when it has an `authorize` hook, the hook decides (403 when denied) and the
+ * response is not cacheable. Unknown codes, tampered ids and missing files are 404.
+ */
 export function createFileServer(options: FileServerOptions): FileServerHandler {
-	const { uploadDir, driver } = options;
 	const servePrefix = options.servePrefix ?? '/file';
-	const root = path.resolve(uploadDir);
+	const registry    = getRegistry(options.attachments);
+	const notFound    = () => new Response('File not found', { status: 404 });
 
 	function getPathname(request: Request): string {
 		return new URL(request.url).pathname;
@@ -40,23 +66,43 @@ export function createFileServer(options: FileServerOptions): FileServerHandler 
 		},
 
 		async handle(request: Request): Promise<Response> {
-			const pathname = getPathname(request);
-			const rest     = pathname.slice(servePrefix.length + 1); // "{slug}/{filename}"
-			const slash    = rest.indexOf('/');
-			if (slash === -1) return new Response('Not Found', { status: 404 });
+			const rest  = getPathname(request).slice(servePrefix.length + 1); // "{groupId}-{version}/{filename}"
+			const slash = rest.indexOf('/');
+			if (slash === -1) return notFound();
 
-			const slug     = rest.slice(0, slash);
-			const filename = rest.slice(slash + 1);
-			const groupId  = slug.replace(/-[a-z0-9]+$/, '');
-			const shard    = groupId.slice(0, 2);
-			const fullPath = path.join(root, shard, groupId, filename);
+			const slug = rest.slice(0, slash);
+			let filename: string;
+			try {
+				filename = decodeURIComponent(rest.slice(slash + 1));  // URLs carry the filename percent-encoded
+			} catch {
+				return notFound();
+			}
+			const lastDash = slug.lastIndexOf('-');
+			if (lastDash <= 0) return notFound();
+			const groupId = slug.slice(0, lastDash);
+			if (!isSafeGroupId(groupId) || !isSafeFilename(filename)) return notFound();
 
-			if (!(await driver.exists(fullPath))) {
-				return new Response('File not found', { status: 404 });
+			const resolved = resolveGroup(registry, groupId);
+			if (!resolved) return notFound();
+			const { entry, entityId } = resolved;
+
+			if (entry.authorize) {
+				const allowed = await entry.authorize({
+					request,
+					entityType: entry.entityType,
+					entityId,
+					category:   entry.category,
+					filename,
+				});
+				if (!allowed) return new Response('Forbidden', { status: 403 });
 			}
 
-			const contentType = mime.getType(filename) ?? 'application/octet-stream';
-			return driver.serve(fullPath, contentType);
+			// The composite group id is the storage folder, so a tampered entity id simply misses.
+			const provider = entry.provider;
+			if (!provider) throw new Error(`createFileServer: no provider for ${entry.entityType}.${entry.category}.`);
+			const logical = physicalPath(groupId, filename);
+			if (!(await provider.exists(logical))) return notFound();
+			return streamResponse(provider, logical, filename, entry.authorize ? PRIVATE_CACHE : PUBLIC_CACHE);
 		},
 	};
 }

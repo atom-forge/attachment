@@ -64,23 +64,24 @@ export function createS3Provider(config: S3ProviderConfig): StorageProvider {
 		},
 
 		stream(logicalPath) {
+			// Pull-based: reads from S3 only as fast as the client consumes,
+			// and cancels the S3 body when the client goes away.
+			let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 			return new ReadableStream<Uint8Array>({
-				async start(controller) {
-					const response = await client.send(new GetObjectCommand({
-						Bucket: config.bucket,
-						Key:    toKey(logicalPath),
-					}));
-					const reader = response.Body!.transformToWebStream().getReader();
-					try {
-						while (true) {
-							const { done, value } = await reader.read();
-							if (done) break;
-							controller.enqueue(value);
-						}
-						controller.close();
-					} catch (err) {
-						controller.error(err);
+				async pull(controller) {
+					if (!reader) {
+						const response = await client.send(new GetObjectCommand({
+							Bucket: config.bucket,
+							Key:    toKey(logicalPath),
+						}));
+						reader = (response.Body!.transformToWebStream() as ReadableStream<Uint8Array>).getReader();
 					}
+					const { done, value } = await reader.read();
+					if (done) controller.close();
+					else controller.enqueue(value);
+				},
+				async cancel(reason) {
+					await reader?.cancel(reason);
 				},
 			});
 		},
@@ -99,18 +100,22 @@ export function createS3Provider(config: S3ProviderConfig): StorageProvider {
 					Key:    toKey(logicalPath),
 				}));
 				return true;
-			} catch {
-				return false;
+			} catch (err) {
+				// Only "not found" means false; credential/network errors must not look like a missing file.
+				const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+				if (e.name === 'NotFound' || e.$metadata?.httpStatusCode === 404) return false;
+				throw err;
 			}
 		},
 
 		async rename(oldLogicalPath, newLogicalPath) {
 			const oldKey = toKey(oldLogicalPath);
 			const newKey = toKey(newLogicalPath);
+			if (oldKey === newKey) return;  // S3 refuses to copy an object onto itself
 
 			await client.send(new CopyObjectCommand({
 				Bucket:     config.bucket,
-				CopySource: `${config.bucket}/${oldKey}`,
+				CopySource: `${config.bucket}/${oldKey.split('/').map(encodeURIComponent).join('/')}`,
 				Key:        newKey,
 			}));
 

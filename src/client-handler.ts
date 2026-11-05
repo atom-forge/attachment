@@ -1,5 +1,5 @@
 import type { ImageVariantMap, Density, AttachmentData, ImgStat } from './types.js';
-import { buildImageUrl } from './image/image-url.js';
+import { buildImageUrl, storedCropMode } from './image/image-url.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -54,7 +54,7 @@ function parseAttachments(entity: Record<string, unknown>): RawAttachments {
 }
 
 function matchesGlob(name: string, pattern: string): boolean {
-	const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+	const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
 	return new RegExp(`^${escaped}$`).test(name);
 }
 
@@ -68,9 +68,7 @@ function makeImgVariants<V extends ImageVariantMap>(
 		(img as Record<string, unknown>)[key] = (density: Density = 1, mode?: 'e' | 'a' | 'c' | 'b') => {
 			const w = Math.round((def.w ?? 0) * density);
 			const h = Math.round((def.h ?? 0) * density);
-			const storedMode = (attachment.meta as { img?: ImgStat } | null)?.img?.c;
-			const resolvedMode: 'e' | 'a' | 'c' | 'b' = mode ?? (typeof storedMode === 'string' ? storedMode : undefined) ?? 'e';
-			return buildImageUrl(attachment, w, h, resolvedMode, thumbPrefix);
+			return buildImageUrl(attachment, w, h, mode ?? storedCropMode(attachment.meta), thumbPrefix);
 		};
 	}
 	return img;
@@ -83,7 +81,7 @@ function makeItemView<V extends ImageVariantMap>(
 	servePrefix: string,
 	thumbPrefix: string,
 ): ItemView<V> {
-	const url = `${servePrefix}/${groupId}-${item.v}/${item.n}`;
+	const url = `${servePrefix}/${groupId}-${item.v}/${encodeURIComponent(item.n)}`;
 	const attachment: AttachmentData<{ img: ImgStat }> = {
 		filename:   item.n,
 		version:    item.v,

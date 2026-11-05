@@ -38,7 +38,18 @@ export function buildImageUrl(
 		modeSegment = `${encoded}.${size}.${ch}`;
 	}
 
-	return `${prefix}/${groupId}-${version}/${modeSegment}/${filename}.webp`;
+	return `${prefix}/${groupId}-${version}/${modeSegment}/${encodeURIComponent(filename)}.webp`;
+}
+
+/**
+ * The crop mode stored by imgstat() (`meta.img.c`), or `'e'`.
+ * A stored focus point is used only together with its pre-computed hash (`meta.img.ch`).
+ */
+export function storedCropMode(meta: unknown): 'e' | 'a' | 'c' | 'b' | Focus {
+	const img = (meta as { img?: ImgStat } | null)?.img;
+	if (!img) return 'e';
+	if (typeof img.c === 'string') return img.c;
+	return img.c && img.ch ? img.c : 'e';
 }
 
 /**
@@ -61,7 +72,5 @@ export function buildVariantUrl<V extends ImageVariantMap>(
 	const def = variants[variant];
 	const w = Math.round((def.w ?? 0) * density);
 	const h = Math.round((def.h ?? 0) * density);
-	const storedMode = (attachment.meta as { img?: ImgStat } | null)?.img?.c;
-	const resolvedMode: 'e' | 'a' | 'c' | 'b' | Focus = mode ?? storedMode ?? 'e';
-	return buildImageUrl(attachment as AttachmentData<{ img: ImgStat }>, w, h, resolvedMode, prefix);
+	return buildImageUrl(attachment as AttachmentData<{ img: ImgStat }>, w, h, mode ?? storedCropMode(attachment.meta), prefix);
 }

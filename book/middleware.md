@@ -27,6 +27,21 @@ flowchart LR
 > [!note] Order matters
 > Put validators first so a rejected upload is never transformed, and transformers (such as `toWebP`) before `imgstat()`, so the stats describe the stored file.
 
+Middlewares are attached per category, in the `middlewares` array of the category object (every category also needs its two-character `code`, see *Handler API*):
+
+```ts
+import { defineAttachments, createLocalProvider, count, mime, toWebP, imgstat } from '@atom-forge/attachment';
+
+const attachments = defineAttachments({
+  user: defineAttachments.entity({
+    avatar:  { code: 'AV', middlewares: [count(1), mime('image/*'), toWebP(80, 400, 400), imgstat()] },
+    gallery: { code: 'GA', middlewares: [mime('image/*'), toWebP(80)] },
+  }),
+}, { provider: createLocalProvider('./var/uploads') });
+```
+
+A middleware should return a new `meta` object instead of mutating the one it received: the caller may reuse one meta object for several uploads. The built-in transformers do so.
+
 ---
 
 ## Validators
@@ -81,7 +96,7 @@ Require peer dependencies (`sharp`, `music-metadata`).
 
 ### `toWebP(lossy?, width?, height?)`
 
-Converts the uploaded image to WebP.
+Converts the uploaded image to WebP. EXIF orientation is applied (phone photos are not stored sideways), and animated GIF/WebP images keep all their frames.
 
 | Param    | Type              | Default | Description                                                  |
 |----------|-------------------|---------|--------------------------------------------------------------|
@@ -100,29 +115,41 @@ Peer dependency: `sharp`
 
 ### `imgstat(cropMode?, focusHash?)`
 
-Reads image dimensions, dominant color, animated flag, and crop mode. Injects an `ImgStat` object into `meta.img`.
+Reads image dimensions, dominant color, animated flag, and crop mode. Returns a new meta object with an `ImgStat` under `meta.img` (the caller's meta is not mutated). The dimensions are the displayed ones: for EXIF orientations 5–8 width and height are swapped.
 
-| Param       | Type                          | Default | Description                                      |
-|-------------|-------------------------------|---------|--------------------------------------------------|
-| `cropMode`  | `'e' \| 'a' \| 'c' \| Focus` | `'e'`   | Crop strategy stored for thumbnail URL building  |
-| `focusHash` | `FocusHashFn`                 | —       | Required to store `meta.img.ch` for manual focus |
+| Param       | Type                                 | Default | Description                                      |
+|-------------|--------------------------------------|---------|--------------------------------------------------|
+| `cropMode`  | `'e' \| 'a' \| 'c' \| 'b' \| Focus` | `'e'`   | Crop strategy stored for thumbnail URL building  |
+| `focusHash` | `FocusHashFn`                        | —       | Required to store `meta.img.ch` for manual focus |
 
 ```ts
 imgstat()        // entropy crop (default)
 imgstat('a')     // attention crop
 imgstat('c')     // centre crop
-imgstat({ x: 500, y: 300, s: { x: 0, y: 0, w: 1000, h: 1000 } })  // manual focus
+imgstat('b')     // box: fit inside, no crop
+imgstat({ x: 500, y: 300, s: { x: 0, y: 0, w: 1000, h: 1000 } }, focusHash)  // manual focus (see below)
 ```
 
-The injected `ImgStat`:
+**Manual focus.** A focus URL is accepted by the image server only with a valid hash. Create the hash function with `createFocusHash(secret)` (server-only export) and use the same secret as `createImageServer({ focusSecret })`:
+
+```ts
+import { imgstat, createFocusHash } from '@atom-forge/attachment';
+
+const focusHash = createFocusHash(process.env.FOCUS_SECRET!);   // same secret as the image server
+imgstat({ x: 500, y: 300, s: { x: 0, y: 0, w: 1000, h: 1000 } }, focusHash)
+```
+
+`imgstat` stores the hash in `meta.img.ch`; the client puts it into the URL. Without `focusHash`, `meta.img.ch` is missing and the client falls back to `'e'` instead of the stored focus.
+
+The stored `ImgStat`:
 
 ```ts
 interface ImgStat {
-  w:   number;                    // width px
-  h:   number;                    // height px
+  w:   number;                    // displayed width px
+  h:   number;                    // displayed height px
   d:   string;                    // dominant color (#rrggbb)
   a:   boolean;                   // animated (GIF / animated WebP)
-  c:   'e' | 'a' | 'c' | Focus;  // stored crop mode
+  c:   'e' | 'a' | 'c' | 'b' | Focus;  // stored crop mode
   ch?: string;                    // HMAC hash of focus12 (manual focus only)
 }
 ```
@@ -138,7 +165,7 @@ Peer dependency: `sharp`
 
 ### `getMp3Duration(metaKey?)`
 
-Reads the duration of an MP3 and injects it into `meta[metaKey]` (seconds, number). Default `metaKey`: `'duration'`.
+Reads the duration of an MP3 and returns a new meta object with it under `meta[metaKey]` (seconds, number; the caller's meta is not mutated). Default `metaKey`: `'duration'`.
 
 ```ts
 getMp3Duration()                  // → meta.duration

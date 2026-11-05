@@ -11,7 +11,7 @@ import type { Focus } from '../types.js';
  * @returns           WebP-encoded Buffer.
  *
  * Notes:
- * - Animated images (`pages > 1`): Focus mode falls back to `'c'` (centre).
+ * - Animated images (`pages > 1`): `'a'` and `'e'` fall back to `'c'` (centre); a manual Focus is kept.
  * - EXIF rotation is applied first via `.rotate()`.
  * - `withoutEnlargement: true` is enforced for all modes.
  *

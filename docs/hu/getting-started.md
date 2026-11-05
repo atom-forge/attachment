@@ -19,9 +19,8 @@ npm install @atom-forge/attachment
 
 | Csomag           | Verzió   | Szükséges ehhez                                |
 |------------------|----------|------------------------------------------------|
-| `sharp`          | `>=0.32` | `toWebP()`, `imgstat()`, `generateThumbnail()` |
+| `sharp`          | `>=0.32` | `toWebP()`, `imgstat()`, `generateImage()`     |
 | `music-metadata` | `>=11`   | `getMp3Duration()`                             |
-| `zod`            | `>=4`    | séma validáló middleware                       |
 
 A peer függőségek opcionálisak — csak azt importáld, amit használsz.
 
@@ -35,37 +34,42 @@ import { createLocalProvider } from '@atom-forge/attachment';
 
 const attachments = defineAttachments({
   user: defineAttachments.entity({
-    avatar:  [count(1), mime('image/*'), toWebP(80, 400, 400), imgstat()],
-    gallery: [mime('image/*'), toWebP(80)],
-  }, { idField: 'neptunCode' }),
+    avatar:  { code: 'AV', middlewares: [count(1), mime('image/*'), toWebP(80, 400, 400), imgstat()] },
+    gallery: { code: 'GA', middlewares: [mime('image/*'), toWebP(80)] },
+  }, { idType: 'uuid' }),
 
   course: defineAttachments.entity({
-    avatar: [count(1), mime(['image/jpeg', 'image/png', 'image/webp'])],
+    avatar: { code: 'CA', middlewares: [count(1), mime(['image/jpeg', 'image/png', 'image/webp'])] },
   }),
 }, {
   provider:    createLocalProvider('./var/uploads'),
   servePrefix: '/file',
   // nextGroupId: opcionális — alapértelmezett: crypto.randomUUID() → base36
-  // Felülírható, ha egyedi vagy adatbázis-alapú group ID szükséges:
+  // Csak a group ID véletlen részét állítja elő; kisbetűs base36-ot ([a-z0-9]+) kell visszaadnia:
   // nextGroupId: async (entityType, entityId, category) => sajatIdGenerator(...)
 });
 ```
 
 `defineAttachments.entity(categories, options?)` egy entitástípust definiál.
 Az `idField` megadja, hogy az entitáson melyik mező az elsődleges kulcs (alapértelmezett: `'id'`).
+Az `idType` megadja, hogyan kerül az azonosító (base36 kódolással) a group ID-ba: `'int'` (alapértelmezett) vagy `'uuid'`. String/slug azonosítók nem támogatottak.
+
+Minden kategória egy objektum, kötelező `code`-dal: pontosan két karakter `[A-Z0-9]`, egyedi az adott `defineAttachments` hívás összes kategóriája között (a fenti példában a `course.avatar` ezért `CA`, nem `AV`). Indításkor ellenőrizve van: hiányzó, hibás vagy duplikált kód, illetve tömb formájú kategória esetén hibát dob. Opcionális mezők: `middlewares`, `authorize` (hozzáférés-ellenőrzés fájl- és thumbnail-kérésenként) és `provider` (kategóriánkénti tárhely) — lásd: [Hozzáférés-szabályozás](access-control.md).
+
+A kód a group ID része, amely egyben a tárolási mappa is: `{random}-{CODE}-{entityId36}`, pl. `k3x9q-CA-39x9` (`39x9` a `152829` base36-ban).
 
 ---
 
 ## 2. Fájl feltöltése
 
 ```ts
-const userRecord = await prisma.user.findUniqueOrThrow({ where: { neptunCode } });
+const userRecord = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
 const h = attachments.user(userRecord);
 
 const { attachment, rollback } = await h.avatar.add(uploadedFile, {});
 try {
   await prisma.user.update({
-    where: { neptunCode },
+    where: { id: userId },
     data:  { attachments: userRecord.attachments as object },
   });
 } catch (err) {
@@ -73,6 +77,8 @@ try {
   throw err;
 }
 ```
+
+Fájlt csak **mentett** entitáshoz lehet csatolni: az azonosítónak léteznie kell és illeszkednie kell az `idType`-hoz, különben az `add` egyértelmű hibaüzenettel dob.
 
 A handler **helyben módosítja az `entity.attachments`-t** — a `prisma.update`-et magadnak kell meghívni a mentéshez.
 
@@ -103,10 +109,10 @@ const item = h.course(course).avatar.first;  // ItemView | undefined
 const all  = h.user(user).gallery.all;       // ItemView[]
 
 item?.filename          // 'photo.jpg'
-item?.url               // '/file/abc123-3/photo.jpg'
+item?.url               // '/file/k3x9q-CA-39x9-1r2jo3l/photo.jpg'
 item?.meta              // unknown — cast-old a saját meta típusodra
-item?.img.avatar()      // '/img/abc123-3/e.400x400/photo.jpg.webp'
-item?.img.avatar(2)     // '/img/abc123-3/e.800x800/photo.jpg.webp'  (2x retina)
+item?.img.avatar()      // '/img/k3x9q-CA-39x9-1r2jo3l/e.400x400/photo.jpg.webp'
+item?.img.avatar(2)     // '/img/k3x9q-CA-39x9-1r2jo3l/e.800x800/photo.jpg.webp'  (2x retina)
 ```
 
 > Böngészős / SSR komponensekben `@atom-forge/attachment/client`-ből importálj. A főcsomag Node.js szerver modulokat is re-exportál.

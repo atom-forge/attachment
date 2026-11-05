@@ -8,7 +8,11 @@ export function createLocalProvider(uploadDir: string): StorageProvider {
 	const root = path.resolve(uploadDir);
 
 	function fullPath(logicalPath: string): string {
-		return path.join(root, logicalPath);
+		const full = path.resolve(root, logicalPath);
+		if (full !== root && !full.startsWith(root + path.sep)) {
+			throw new Error(`Path "${logicalPath}" points outside the upload directory.`);
+		}
+		return full;
 	}
 
 	return {
@@ -25,7 +29,12 @@ export function createLocalProvider(uploadDir: string): StorageProvider {
 		},
 		async delete(logicalPath) {
 			const full = fullPath(logicalPath);
-			await fs.unlink(full);
+			try {
+				await fs.unlink(full);
+			} catch (err) {
+				// Already gone is fine: the goal (no file) is reached, and the record can still be removed.
+				if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+			}
 			try {
 				await fs.rmdir(path.dirname(full));
 			} catch {

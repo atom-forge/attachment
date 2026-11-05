@@ -17,7 +17,7 @@ export function getMp3Duration(metaKey: string = 'duration'): UploadMiddleware {
 		const buffer = new Uint8Array(await file.arrayBuffer());
 		const parsed = await parseBuffer(buffer, { mimeType: file.type });
 
-		(meta as Record<string, unknown>)[metaKey] = parsed.format.duration ?? 0;
-		return { file, meta };
+		// New object: callers may reuse one meta object for several uploads.
+		return { file, meta: { ...(meta as object), [metaKey]: parsed.format.duration ?? 0 } as typeof meta };
 	};
 }

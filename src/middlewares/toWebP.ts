@@ -25,7 +25,9 @@ export function toWebP(
 				? { lossless: true }
 				: { quality: lossy as number };
 
-		let pipeline = sharp(buffer);
+		// animated: keep every frame of GIF/WebP animations; rotate(): apply EXIF orientation
+		// (sharp drops EXIF on output, so phone photos would otherwise end up sideways).
+		let pipeline = sharp(buffer, { animated: true }).rotate();
 		if (width !== undefined || height !== undefined) {
 			pipeline = pipeline.resize({ width, height, fit: 'inside', withoutEnlargement: true });
 		}

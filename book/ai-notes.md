@@ -22,12 +22,15 @@ version; Markdown filesystem paths are not package import subpaths.
 Read the task-relevant entity/category, pipeline, provider, persistence,
 rollback/cleanup, and client/serving guidance. Verify the actual documented API
 before selecting an operation or assuming automatic lifecycle behavior.
+When upgrading the package, read `docs/en/upgrading.md` in the package for the
+changes that need action between the installed and the new version.
 
 This project's attachment setup:
 
 - Service / configuration location: <CONFIGURATION_LOCATION>
 - Owning entity and metadata contract: <OWNERSHIP_AND_METADATA>
 - Category definitions and upload rules: <CATEGORY_LOCATION_AND_POLICY>
+- Category codes and access control (`authorize`, proxy public-code list): <CODES_AND_ACCESS_POLICY>
 - Storage provider and configuration: <PROVIDER_AND_CONFIG_LOCATION>
 - Image variant definitions: <VARIANT_LOCATION_OR_NOT_USED>
 - Serving routes and URL conventions: <SERVING_LOCATION_AND_URLS>

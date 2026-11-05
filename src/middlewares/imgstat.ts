@@ -18,9 +18,12 @@ export function imgstat(cropMode: ImgStat['c'] = 'e', focusHash?: FocusHashFn): 
 		const [md, stats] = await Promise.all([img.metadata(), img.stats()]);
 		const { r, g, b } = stats.dominant;
 		const hex = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+		// EXIF orientations 5–8 are rotated by 90°: report the dimensions as displayed
+		// (generateImage and toWebP apply the orientation too).
+		const rotated = (md.orientation ?? 1) >= 5;
 		const imgStat: ImgStat = {
-			w: md.width!,
-			h: md.height!,
+			w: rotated ? md.height! : md.width!,
+			h: rotated ? md.width! : md.height!,
 			d: hex,
 			a: md.pages ? md.pages > 1 : false,
 			c: cropMode,
@@ -28,7 +31,7 @@ export function imgstat(cropMode: ImgStat['c'] = 'e', focusHash?: FocusHashFn): 
 		if (typeof cropMode === 'object' && focusHash) {
 			imgStat.ch = focusHash(encodeFocus(cropMode as Focus));
 		}
-		(meta as Record<string, unknown>).img = imgStat;
-		return { file, meta };
+		// New object: callers may reuse one meta object for several uploads.
+		return { file, meta: { ...(meta as object), img: imgStat } as typeof meta };
 	};
 }

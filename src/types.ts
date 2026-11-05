@@ -122,4 +122,14 @@ export type UploadMiddleware<TMeta = unknown> = (
 	files: AttachmentData<TMeta>[],
 ) => Promise<{ file: File; meta: TMeta }>;
 
-export type CategoryInput<TMeta = unknown> = UploadMiddleware<TMeta>[] | null | undefined;
+export interface CategoryConfig<TMeta = unknown> {
+	/** Two characters [A-Z0-9], unique across all categories of a defineAttachments() call. */
+	code:         string;
+	middlewares?: UploadMiddleware<TMeta>[];
+	/** Checks every file and thumbnail request of this category (served with `private, no-store`). */
+	authorize?:   import('./group-id.js').AuthorizeFn;
+	/** Storage for this category (defaults to the `defineAttachments` provider). */
+	provider?:    StorageProvider;
+}
+
+export type CategoryInput<TMeta = unknown> = CategoryConfig<TMeta>;

@@ -36,9 +36,8 @@ npm install @atom-forge/attachment
 
 | Package          | Version  | Required by                                    |
 |------------------|----------|------------------------------------------------|
-| `sharp`          | `>=0.32` | `toWebP()`, `imgstat()`, `generateThumbnail()` |
+| `sharp`          | `>=0.32` | `toWebP()`, `imgstat()`, `generateImage()`     |
 | `music-metadata` | `>=11`   | `getMp3Duration()`                             |
-| `zod`            | `>=4`    | schema validation middleware                   |
 
 Peer deps are optional at the package level — import only what you use.
 
@@ -52,37 +51,42 @@ import { createLocalProvider } from '@atom-forge/attachment';
 
 const attachments = defineAttachments({
   user: defineAttachments.entity({
-    avatar:  [count(1), mime('image/*'), toWebP(80, 400, 400), imgstat()],
-    gallery: [mime('image/*'), toWebP(80)],
-  }, { idField: 'neptunCode' }),
+    avatar:  { code: 'AV', middlewares: [count(1), mime('image/*'), toWebP(80, 400, 400), imgstat()] },
+    gallery: { code: 'GA', middlewares: [mime('image/*'), toWebP(80)] },
+  }, { idType: 'uuid' }),
 
   course: defineAttachments.entity({
-    avatar: [count(1), mime(['image/jpeg', 'image/png', 'image/webp'])],
+    avatar: { code: 'CA', middlewares: [count(1), mime(['image/jpeg', 'image/png', 'image/webp'])] },
   }),
 }, {
   provider:    createLocalProvider('./var/uploads'),
   servePrefix: '/file',
   // nextGroupId: optional — defaults to crypto.randomUUID() → base36
-  // Override if you need deterministic or DB-backed group IDs:
+  // It produces only the random part of the group ID and must return lowercase base36 ([a-z0-9]+):
   // nextGroupId: async (entityType, entityId, category) => myIdGenerator(...)
 });
 ```
 
 `defineAttachments.entity(categories, options?)` defines one entity type.
 `idField` tells the handler which field on the entity is the primary key (default: `'id'`).
+`idType` tells how that id is encoded (in base36) into the group ID: `'int'` (default) or `'uuid'`. String/slug ids are not supported.
+
+Every category is an object with a mandatory `code`: exactly two characters `[A-Z0-9]`, unique across all categories of one `defineAttachments` call (that is why `course.avatar` is `CA`, not `AV`, above). It is validated at startup: a missing, malformed or duplicate code, or an array-form category, throws. Optional fields: `middlewares`, `authorize` (an access check on every file and thumbnail request) and `provider` (per-category storage) — see *Access Control*.
+
+The code is part of the group ID, which is also the storage folder: `{random}-{CODE}-{entityId36}`, e.g. `k3x9q-CA-39x9` (`39x9` is `152829` in base36).
 
 ---
 
 ## 2. Upload a file
 
 ```ts
-const userRecord = await prisma.user.findUniqueOrThrow({ where: { neptunCode } });
+const userRecord = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
 const h = attachments.user(userRecord);
 
 const { attachment, rollback } = await h.avatar.add(uploadedFile, {});
 try {
   await prisma.user.update({
-    where: { neptunCode },
+    where: { id: userId },
     data:  { attachments: userRecord.attachments as object },
   });
 } catch (err) {
@@ -90,6 +94,8 @@ try {
   throw err;
 }
 ```
+
+Attachments can only be added to a **saved** entity: its id must exist and match `idType`, otherwise `add` throws with a clear message.
 
 > [!warning] Persist yourself
 > The handler **mutates `entity.attachments` in-place** — you must call `prisma.update` yourself to persist.
@@ -140,10 +146,10 @@ const item = h.course(course).avatar.first;  // ItemView | undefined
 const all  = h.user(user).gallery.all;       // ItemView[]
 
 item?.filename          // 'photo.jpg'
-item?.url               // '/file/abc123-3/photo.jpg'
+item?.url               // '/file/k3x9q-CA-39x9-1r2jo3l/photo.jpg'
 item?.meta              // unknown — cast to your meta type
-item?.img.avatar()      // '/img/abc123-3/e.400x400/photo.jpg.webp'
-item?.img.avatar(2)     // '/img/abc123-3/e.800x800/photo.jpg.webp'  (2x retina)
+item?.img.avatar()      // '/img/k3x9q-CA-39x9-1r2jo3l/e.400x400/photo.jpg.webp'
+item?.img.avatar(2)     // '/img/k3x9q-CA-39x9-1r2jo3l/e.800x800/photo.jpg.webp'  (2x retina)
 ```
 
 > [!note] Client import
