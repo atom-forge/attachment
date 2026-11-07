@@ -7,6 +7,9 @@ export type {
 	CategoryInput,
 	CategoryConfig,
 	DefineAttachmentsOptions,
+	AtomicFn,
+	AtomicContext,
+	StoredFile,
 	Focus,
 	FocusHashFn,
 	ImgStat,
@@ -28,6 +31,7 @@ export type {
 	ThumbnailGeneratedEvent,
 } from './events/types.js';
 export { AttachmentValidationError, encodeFocus, decodeFocus } from './types.js';
+export type { AtomicCategoryHandler } from './atomic-handler.js';
 export { createLocalProvider, type LocalStorageProvider } from './storage/create-local-provider.js';
 export { createS3Provider, type S3ProviderConfig, type S3StorageProvider } from './storage/create-s3-provider.js';
 export {
@@ -37,6 +41,8 @@ export {
 	type CategoryHandler,
 	type AttachmentWithUrl,
 	type AttachmentHandler,
+	type AtomicAttachmentHandler,
+	type AttachmentsModule,
 	physicalPath,
 } from './define-attachments.js';
 export {

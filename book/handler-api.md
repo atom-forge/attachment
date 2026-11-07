@@ -3,7 +3,7 @@ type: chapter
 ---
 # Handler API
 
-Once you have a handler for an entity, everything you do with its files goes through it. This chapter walks through the operations in the order you will usually need them: read, add, replace, change metadata, rename, delete and reorder. Keep one rule in mind throughout: the handler only changes the in-memory entity, so saving it to the database is always your job.
+Once you have a handler for an entity, everything you do with its files goes through it. This chapter walks through the operations in the order you will usually need them: read, add, replace, change metadata, rename, delete and reorder. Keep one rule in mind throughout: the handler only changes the in-memory entity, so saving it to the database is always your job — unless you enable atomic mode, in which the operations save themselves (see *Concurrent Writes*).
 
 ## Creating a handler
 
@@ -36,6 +36,8 @@ h.avatar.get('photo.jpg')  // AttachmentData | undefined
 
 > [!warning] In-place mutation
 > All write methods **mutate `entity.attachments` in-place**. Persist with `prisma.update` after every write.
+>
+> This chapter describes the default mode. In atomic mode the write methods save themselves, `add` and `replace` return the attachment without `rollback`, and `updateMeta` and `reorder` are asynchronous — see *Concurrent Writes*.
 
 ### `add(file, meta)`
 
@@ -147,6 +149,8 @@ flowchart TD
 | `sanitize`     | `false \| true \| (name) => string`                    | `true` (built-in)    | Filename sanitization                            |
 | `findUnique`   | `(existing, name) => string`                           | `base(n)ext`         | Collision resolution for `add()`                 |
 | `eventManager` | `EventEmitter`                                         | —                    | Event bus for attachment lifecycle events        |
+| `atomic`       | `AtomicFn`                                             | —                    | Enables atomic mode: the package saves every change through this function (see *Concurrent Writes*) |
+| `orphanAge`    | `number` (seconds)                                     | `86400`              | Atomic mode: unlisted files older than this are deleted as orphans |
 
 ---
 
@@ -158,6 +162,7 @@ flowchart TD
 |-----------|-------------------|---------|----------------------------------------------------------------------|
 | `idField` | `string`          | `'id'`  | Primary key field on the entity                                      |
 | `idType`  | `'int' \| 'uuid'` | `'int'` | How the id is encoded (base36) into the group ID; string/slug ids are not supported |
+| `atomic`  | `AtomicFn`        | —       | Atomic mode for this entity only; overrides the `defineAttachments` option |
 
 ## `CategoryConfig`
 

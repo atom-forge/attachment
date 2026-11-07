@@ -3,11 +3,13 @@
 Middlewares run in order before `add()` and `replace()`. Throw `AttachmentValidationError` to abort the upload.
 
 ```ts
-type UploadMiddleware<TMeta = unknown> = (
+type UploadMiddleware<TMeta = unknown> = ((
   file:  File,
   meta:  TMeta,
   files: AttachmentData<TMeta>[],   // existing files in the category
-) => Promise<{ file: File; meta: TMeta }>;
+) => Promise<{ file: File; meta: TMeta }>) & {
+  check?: (file: File, files: AttachmentData<TMeta>[]) => void;   // optional, see below
+};
 ```
 
 Middlewares are attached per category, in the `middlewares` array of the category object (every category also needs its two-character `code`, see [Handler API](handler-api.md)):
@@ -25,13 +27,37 @@ const attachments = defineAttachments({
 
 A middleware should return a new `meta` object instead of mutating the one it received: the caller may reuse one meta object for several uploads. The built-in transformers do so.
 
+### Limits that depend on other files: `check`
+
+The `files` argument is the list the request loaded. In atomic mode (see [Concurrent Writes](concurrency.md)) concurrent uploads may change that list before the upload is saved, so a limit that depends on the other files also needs a synchronous `check` part, which runs again on the fresh list when the upload is saved. `count()` and `sumSize()` have it. A custom limit adds it with `Object.assign`:
+
+```ts
+import { AttachmentValidationError, type AttachmentData, type UploadMiddleware } from '@atom-forge/attachment';
+
+// At most `max` PDF files in the category.
+export function maxPdfs(max: number): UploadMiddleware {
+  const check = (file: File, files: AttachmentData[]) => {
+    const pdfs = files.filter((f) => f.filename.endsWith('.pdf')).length;
+    if (file.name.endsWith('.pdf') && pdfs >= max) {
+      throw new AttachmentValidationError(`At most ${max} PDF files.`);
+    }
+  };
+  return Object.assign(async (file: File, meta: unknown, files: AttachmentData[]) => {
+    check(file, files);
+    return { file, meta };
+  }, { check });
+}
+```
+
+In the default mode `check` is not called separately; the middleware itself runs it.
+
 ---
 
 ## Validators
 
 ### `count(max)`
 
-Rejects the upload when the category already has `max` or more files.
+Rejects the upload when the category already has `max` or more files. In atomic mode the limit also holds for concurrent uploads.
 
 ```ts
 count(1)   // at most one file (avatar use case)
@@ -48,7 +74,7 @@ size(2 * 1024 * 1024)   // 2 MB
 
 ### `sumSize(maxBytes)`
 
-Rejects when total size of all existing files + the new file exceeds `maxBytes`.
+Rejects when total size of all existing files + the new file exceeds `maxBytes`. In atomic mode the limit also holds for concurrent uploads.
 
 ```ts
 sumSize(50 * 1024 * 1024)   // 50 MB total for the category

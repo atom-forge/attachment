@@ -31,6 +31,8 @@ h.avatar.get('photo.jpg')  // AttachmentData | undefined
 
 All write methods **mutate `entity.attachments` in-place**. Persist with `prisma.update` after every write.
 
+This page describes the default mode. In atomic mode the write methods save themselves, `add` and `replace` return the attachment without `rollback`, and `updateMeta` and `reorder` are asynchronous — see [Concurrent Writes](concurrency.md).
+
 ### `add(file, meta)`
 
 ```ts
@@ -130,6 +132,8 @@ try {
 | `sanitize`     | `false \| true \| (name) => string`                    | `true` (built-in)    | Filename sanitization                            |
 | `findUnique`   | `(existing, name) => string`                           | `base(n)ext`         | Collision resolution for `add()`                 |
 | `eventManager` | `EventEmitter`                                         | —                    | Event bus for attachment lifecycle events        |
+| `atomic`       | `AtomicFn`                                             | —                    | Enables atomic mode: the package saves every change through this function (see [Concurrent Writes](concurrency.md)) |
+| `orphanAge`    | `number` (seconds)                                     | `86400`              | Atomic mode: unlisted files older than this are deleted as orphans |
 
 ---
 
@@ -141,6 +145,7 @@ try {
 |-----------|-------------------|---------|----------------------------------------------------------------------|
 | `idField` | `string`          | `'id'`  | Primary key field on the entity                                      |
 | `idType`  | `'int' \| 'uuid'` | `'int'` | How the id is encoded (base36) into the group ID; string/slug ids are not supported |
+| `atomic`  | `AtomicFn`        | —       | Atomic mode for this entity only; overrides the `defineAttachments` option |
 
 ## `CategoryConfig`
 

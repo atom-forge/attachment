@@ -50,7 +50,45 @@ export interface StorageProvider {
 	exists(path: string): Promise<boolean>;
 	rename(oldPath: string, newPath: string): Promise<void>;
 	setEventManager?(em: import('./events/types.js').EventEmitter): void;
+
+	// --- Needed only with the `atomic` option (conflict-safe mode) ---
+
+	/** Saves the file only if nothing exists at `path` yet; `false` when it already exists. */
+	create?(path: string, file: File): Promise<boolean>;
+	/** Copies `from` to `to` only if nothing exists at `to` yet; `false` when it already exists. */
+	copy?(from: string, to: string): Promise<boolean>;
+	/** Files directly in a folder (`{shard}/{groupId}`); empty when the folder does not exist. */
+	list?(folder: string): Promise<StoredFile[]>;
+	/** Opaque token of the file's current content (e.g. S3 ETag); `null` when the file does not exist. */
+	etag?(path: string): Promise<string | null>;
+	/** Overwrites the file only if its current token is still `etag`; `false` otherwise (changed or deleted). */
+	replaceIf?(path: string, file: File, etag: string): Promise<boolean>;
 }
+
+export interface StoredFile {
+	name:     string;
+	/** Last modification time (ms since epoch). */
+	modified: number;
+}
+
+// ---------------------------------------------------------------------------
+// Atomic (conflict-safe) mode
+// ---------------------------------------------------------------------------
+
+export interface AtomicContext {
+	entityType: string;
+	entityId:   string;
+	entity:     Record<string, unknown>;
+}
+
+/**
+ * Atomically updates the entity's `attachments` column: read the current value,
+ * pass it to `mutate`, write the result and return it — without another write
+ * in between (row lock in a transaction, or compare-and-set with retry).
+ * `mutate` is pure and synchronous and may be called more than once; when it
+ * throws, nothing must be written and the error must propagate.
+ */
+export type AtomicFn = (ctx: AtomicContext, mutate: (current: unknown) => unknown) => Promise<unknown>;
 
 // ---------------------------------------------------------------------------
 // Factory options
@@ -63,6 +101,10 @@ export interface DefineAttachmentsOptions {
 	sanitize?:     false | true | ((name: string) => string);   // filename sanitization, default: true (built-in)
 	findUnique?:   (existing: string[], name: string) => string; // collision resolution for add(), default: base(n)ext
 	eventManager?: import('./events/types.js').EventEmitter;
+	/** Conflict-safe mode: the package saves every change itself through this function. */
+	atomic?:       AtomicFn;
+	/** Atomic mode: a file in a group folder that is not listed and older than this (seconds) is an orphan and gets deleted. Default: 86400. */
+	orphanAge?:    number;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,11 +158,18 @@ export class AttachmentValidationError extends Error {
 	}
 }
 
-export type UploadMiddleware<TMeta = unknown> = (
+export type UploadMiddleware<TMeta = unknown> = ((
 	file: File,
 	meta: TMeta,
 	files: AttachmentData<TMeta>[],
-) => Promise<{ file: File; meta: TMeta }>;
+) => Promise<{ file: File; meta: TMeta }>) & {
+	/**
+	 * Optional limit that depends on the other files (e.g. count, total size). In atomic
+	 * mode it runs again on the fresh list when the upload is saved, so concurrent
+	 * uploads cannot bypass it. Throws `AttachmentValidationError` to reject.
+	 */
+	check?: (file: File, files: AttachmentData<TMeta>[]) => void;
+};
 
 export interface CategoryConfig<TMeta = unknown> {
 	/** Two characters [A-Z0-9], unique across all categories of a defineAttachments() call. */

@@ -86,6 +86,13 @@ interface StorageProvider {
   exists(path: string):                         Promise<boolean>;
   rename(oldPath: string, newPath: string):     Promise<void>;
   setEventManager?(em: EventEmitter):           void;
+
+  // csak atomi módban kell (lásd Egyidejű írások)
+  create?(path: string, file: File):                     Promise<boolean>;   // false: már létezik
+  copy?(from: string, to: string):                       Promise<boolean>;   // false: a cél létezik
+  list?(folder: string):                                 Promise<{ name: string; modified: number }[]>;
+  etag?(path: string):                                   Promise<string | null>;
+  replaceIf?(path: string, file: File, etag: string):    Promise<boolean>;   // false: megváltozott vagy törölték
 }
 ```
 
@@ -97,6 +104,7 @@ A beépített providerek szerződésének részletei:
 - `exists` — az S3 provider csak „nem található” esetén ad `false`-t, minden más hibát (hitelesítés, hálózat) továbbdob. `s3:ListBucket` jogosultság nélkül az S3 a hiányzó kulcsokra 403-at ad, ami ilyenkor `false` helyett hibaként jelenik meg.
 - `stream` — az S3 provider pull alapú: csak olyan ütemben olvas az S3-ból, ahogy a kliens fogyaszt, és megszakítja az S3 választ, ha a kliens elmegy.
 - `rename` — az S3 providernél az azonos kulcsra történő átnevezés no-op.
+- Az atomi mód metódusai soha nem írnak felül és nem hoznak létre fájlt feltétel nélkül; mindkét beépített provider megvalósítja őket. Egyedi providernek csak akkor kellenek, ha bekapcsolod az atomi módot (a `defineAttachments` ezt induláskor ellenőrzi). Lásd [Egyidejű írások](concurrency.md).
 
 ---
 

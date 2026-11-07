@@ -5,8 +5,9 @@ import {
 	DeleteObjectCommand,
 	HeadObjectCommand,
 	CopyObjectCommand,
+	ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
-import type { StorageProvider } from '../types.js';
+import type { StorageProvider, StoredFile } from '../types.js';
 import type { EventEmitter } from '../events/types.js';
 
 export interface S3ProviderConfig {
@@ -31,6 +32,14 @@ export function createS3Provider(config: S3ProviderConfig): StorageProvider {
 
 	let eventManager: EventEmitter | undefined;
 	const prefix = config.prefix?.replace(/^\/+|\/+$/g, '');
+
+	function body(file: File) {
+		return file.arrayBuffer().then((b) => new Uint8Array(b));
+	}
+
+	function copySource(key: string): string {
+		return `${config.bucket}/${key.split('/').map(encodeURIComponent).join('/')}`;
+	}
 
 	// strips shard prefix: "ab/abcd1234/photo.jpg" → "abcd1234/photo.jpg"
 	function toKey(logicalPath: string): string {
@@ -102,8 +111,7 @@ export function createS3Provider(config: S3ProviderConfig): StorageProvider {
 				return true;
 			} catch (err) {
 				// Only "not found" means false; credential/network errors must not look like a missing file.
-				const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
-				if (e.name === 'NotFound' || e.$metadata?.httpStatusCode === 404) return false;
+				if (isNotFound(err)) return false;
 				throw err;
 			}
 		},
@@ -115,7 +123,7 @@ export function createS3Provider(config: S3ProviderConfig): StorageProvider {
 
 			await client.send(new CopyObjectCommand({
 				Bucket:     config.bucket,
-				CopySource: `${config.bucket}/${oldKey.split('/').map(encodeURIComponent).join('/')}`,
+				CopySource: copySource(oldKey),
 				Key:        newKey,
 			}));
 
@@ -133,7 +141,101 @@ export function createS3Provider(config: S3ProviderConfig): StorageProvider {
 				});
 			}
 		},
+
+		// --- atomic mode ---
+
+		async create(logicalPath, file) {
+			try {
+				await client.send(new PutObjectCommand({
+					Bucket:       config.bucket,
+					Key:          toKey(logicalPath),
+					Body:         await body(file),
+					ContentType:  file.type || 'application/octet-stream',
+					CacheControl: 'public, max-age=31536000, immutable',
+					IfNoneMatch:  '*',
+				}));
+				return true;
+			} catch (err) {
+				if (isConditionFailed(err)) return false;
+				throw err;
+			}
+		},
+
+		async copy(fromLogicalPath, toLogicalPath) {
+			try {
+				await client.send(new CopyObjectCommand({
+					Bucket:      config.bucket,
+					CopySource:  copySource(toKey(fromLogicalPath)),
+					Key:         toKey(toLogicalPath),
+					IfNoneMatch: '*',
+				}));
+				return true;
+			} catch (err) {
+				if (isConditionFailed(err)) return false;
+				throw err;
+			}
+		},
+
+		async list(logicalFolder) {
+			const folderKey = toKey(logicalFolder) + '/';
+			const files: StoredFile[] = [];
+			let token: string | undefined;
+			do {
+				const page = await client.send(new ListObjectsV2Command({
+					Bucket:            config.bucket,
+					Prefix:            folderKey,
+					Delimiter:         '/',
+					ContinuationToken: token,
+				}));
+				for (const obj of page.Contents ?? []) {
+					if (!obj.Key) continue;
+					files.push({ name: obj.Key.slice(folderKey.length), modified: obj.LastModified?.getTime() ?? 0 });
+				}
+				token = page.IsTruncated ? page.NextContinuationToken : undefined;
+			} while (token);
+			return files;
+		},
+
+		async etag(logicalPath) {
+			try {
+				const head = await client.send(new HeadObjectCommand({ Bucket: config.bucket, Key: toKey(logicalPath) }));
+				return head.ETag ?? null;
+			} catch (err) {
+				if (isNotFound(err)) return null;
+				throw err;
+			}
+		},
+
+		async replaceIf(logicalPath, file, etag) {
+			try {
+				await client.send(new PutObjectCommand({
+					Bucket:       config.bucket,
+					Key:          toKey(logicalPath),
+					Body:         await body(file),
+					ContentType:  file.type || 'application/octet-stream',
+					CacheControl: 'public, max-age=31536000, immutable',
+					IfMatch:      etag,
+				}));
+				return true;
+			} catch (err) {
+				if (isConditionFailed(err) || isNotFound(err)) return false;
+				throw err;
+			}
+		},
 	};
+}
+
+type S3Error = { name?: string; $metadata?: { httpStatusCode?: number } };
+
+function isNotFound(err: unknown): boolean {
+	const e = err as S3Error;
+	return e.name === 'NotFound' || e.name === 'NoSuchKey' || e.$metadata?.httpStatusCode === 404;
+}
+
+// 412: the condition (If-None-Match / If-Match) failed; 409: a concurrent conditional write won.
+function isConditionFailed(err: unknown): boolean {
+	const status = (err as S3Error).$metadata?.httpStatusCode;
+	return status === 412 || status === 409;
 }
 
 export type S3StorageProvider = ReturnType<typeof createS3Provider>;

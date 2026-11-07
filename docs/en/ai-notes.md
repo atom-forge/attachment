@@ -36,6 +36,7 @@ This project's attachment setup:
 - Serving routes and URL conventions: <SERVING_LOCATION_AND_URLS>
 - Browser-safe URL helpers: <CLIENT_HELPERS_OR_NOT_USED>
 - Persistence boundary: <PERSISTENCE_OWNER>
+- Concurrent writes (atomic mode and its `atomic` function, or default mode): <ATOMIC_MODE_OR_DEFAULT>
 - Failure compensation and cleanup: <FAILURE_POLICY>
 - Replacement / deletion ownership: <LIFECYCLE_POLICY>
 
@@ -47,7 +48,9 @@ code.
 File storage and database updates may have separate failure boundaries. Preserve
 existing metadata and define what happens when either operation fails. Use the
 package's rollback facility only where the installed version documents it;
-do not invent a compensation API. Verify replacement, deletion, and retry
+do not invent a compensation API. In atomic mode the operations save
+themselves: never write the attachments column or save a whole loaded row over
+it. Verify replacement, deletion, and retry
 behavior before relying on them.
 ```
 

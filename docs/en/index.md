@@ -18,7 +18,8 @@ The chapters build on each other, so reading them in order works best:
 4. **[Image Handling](image.md)** shows how thumbnails and image variants work.
 5. **[Serving Files](serving.md)** wires everything into your framework and reverse proxy.
 6. **[Storage](storage.md)** describes the JSON format, the providers and the events behind it all.
-7. **[Access Control](access-control.md)** explains how categories become public or authorized, and how the reverse proxy and storage keep authorized files protected.
+7. **[Concurrent Writes](concurrency.md)** shows the optional atomic mode, which keeps concurrent changes of the same entity from overwriting each other.
+8. **[Access Control](access-control.md)** explains how categories become public or authorized, and how the reverse proxy and storage keep authorized files protected.
 
 When you upgrade from an earlier version, read **[Upgrading](upgrading.md)**: it lists every change that needs action, version by version. **[AI Notes](ai-notes.md)** gives copyable instructions for coding agents working in projects that use the package.
 

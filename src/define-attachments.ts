@@ -1,6 +1,16 @@
 import mime from 'mime';
 import { AttachmentValidationError } from './types.js';
-import { isSafeFilename } from './safe-path.js';
+import {
+	asStore,
+	assertSafeFilename,
+	extensionOf,
+	makeVersion,
+	physicalPath,
+	toPublic as toPublicItem,
+	type AttachmentsStore,
+	type EntityRecord,
+} from './handler-utils.js';
+
 import type {
 	AttachmentData,
 	AttachmentItem,
@@ -11,6 +21,9 @@ import type {
 	CategoryInput,
 } from './types.js';
 import type { EventEmitter } from './events/types.js';
+import type { AtomicFn } from './types.js';
+import { assertAtomicProvider, makeAtomicCategoryHandler, type AtomicCategoryHandler } from './atomic-handler.js';
+import { groupFolder } from './handler-utils.js';
 import {
 	CATEGORY_REGISTRY,
 	CODE_PATTERN,
@@ -21,17 +34,23 @@ import {
 	type EntityIdType,
 } from './group-id.js';
 
+export { physicalPath };
+
 // --- Config types ---
 
 export interface EntityOptions {
 	idField?: string;
 	/** How the entity id is encoded into group ids (base36). Default: 'int'. */
 	idType?:  EntityIdType;
+	/** Conflict-safe mode for this entity only (overrides the `defineAttachments` option). */
+	atomic?:  AtomicFn;
 }
 
-export interface EntityDefinition<TCategories extends Record<string, CategoryInput>> {
+export interface EntityDefinition<TCategories extends Record<string, CategoryInput>, TAtomic extends boolean = boolean> {
 	_options: EntityOptions;
 	categories: TCategories;
+	/** Type-level marker: true when the entity has its own `atomic` function. */
+	readonly _atomic?: TAtomic;
 }
 
 // url is now part of AttachmentData; this alias is kept for backward compatibility
@@ -41,21 +60,8 @@ const defaultNextGroupId = async () => BigInt('0x' + crypto.randomUUID().replace
 
 // --- Internal helpers ---
 
-type AttachmentsStore = Record<string, CategoryStore>;
-type EntityRecord = { attachments: unknown } & Record<string, unknown>;
-
-export function physicalPath(groupId: string, filename: string): string {
-	const shard = groupId.slice(0, 2);
-	return `${shard}/${groupId}/${filename}`;
-}
-
-function serveUrl(prefix: string, groupId: string, version: string, filename: string): string {
-	return `${prefix}/${groupId}-${version}/${encodeURIComponent(filename)}`;
-}
-
 function readStore(entity: EntityRecord): AttachmentsStore {
-	const r = entity.attachments;
-	return r && typeof r === 'object' && !Array.isArray(r) ? (r as AttachmentsStore) : {};
+	return asStore(entity.attachments);
 }
 
 // Stem and extension are cleaned separately, so a stem made only of non-ASCII
@@ -72,17 +78,6 @@ const defaultSanitize = (name: string): string => {
 	const ext = dot >= 0 ? ascii.slice(dot + 1).replace(/[^a-zA-Z0-9]/g, '') : '';
 	return ext ? `${stem}.${ext}` : stem;
 };
-
-/** Item version: base36 counter plus a random suffix, so future version URLs cannot be guessed and pre-cached. */
-function makeVersion(counter: number): string {
-	const rnd = crypto.getRandomValues(new Uint32Array(1))[0].toString(36).padStart(7, '0').slice(-6);
-	return `${counter.toString(36)}${rnd}`;
-}
-
-function extensionOf(name: string): string {
-	const dot = name.lastIndexOf('.');
-	return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
-}
 
 const defaultFindUnique = (existing: string[], name: string): string => {
 	if (!existing.includes(name)) return name;
@@ -114,12 +109,6 @@ function serialize<T>(entity: object, fn: () => Promise<T>): Promise<T> {
 	const run = previous.then(fn, fn);
 	entityLocks.set(entity, run.catch(() => {}));
 	return run;
-}
-
-function assertSafeFilename(filename: string, category: string): void {
-	if (!isSafeFilename(filename)) {
-		throw new AttachmentValidationError(`Invalid filename "${filename}" in "${category}".`);
-	}
 }
 
 // --- Category handler ---
@@ -186,15 +175,7 @@ function makeCategoryHandler<TMeta>(
 	}
 
 	function toPublic(item: AttachmentItem, groupId: string): AttachmentData<TMeta> {
-		return {
-			filename:   item.n,
-			version:    item.v,
-			groupId,
-			size:       item.s,
-			uploadedAt: item.t,
-			meta:       item.x as TMeta,
-			url:        serveUrl(servePrefix, groupId, item.v, item.n),
-		};
+		return toPublicItem<TMeta>(item, groupId, servePrefix);
 	}
 
 	function requireProvider(): StorageProvider {
@@ -429,6 +410,26 @@ export type AttachmentHandler<TCategories extends Record<string, CategoryInput>>
 	purge(): Promise<void>;
 };
 
+/** Handler of an entity in atomic mode: changes save themselves, there is no rollback. */
+export type AtomicAttachmentHandler<TCategories extends Record<string, CategoryInput>> = {
+	[K in keyof TCategories]: AtomicCategoryHandler;
+} & {
+	purge(): Promise<void>;
+};
+
+type HasAtomic<O> = O extends { atomic: AtomicFn } ? true : false;
+
+type HandlerOf<D, O> =
+	D extends EntityDefinition<infer C, infer A>
+		? [A] extends [true] ? AtomicAttachmentHandler<C>
+		: HasAtomic<O> extends true ? AtomicAttachmentHandler<C>
+		: AttachmentHandler<C>
+		: never;
+
+export type AttachmentsModule<TConfig, O = {}> = {
+	[K in keyof TConfig]: (entity: EntityRecord) => HandlerOf<TConfig[K], O>;
+};
+
 function makeEntityHandler<TCategories extends Record<string, CategoryInput>>(
 	entityType: string,
 	entityDef: EntityDefinition<TCategories>,
@@ -438,6 +439,8 @@ function makeEntityHandler<TCategories extends Record<string, CategoryInput>>(
 	sanitizeFn: ((name: string) => string) | false,
 	findUniqueFn: (existing: string[], name: string) => string,
 	eventManager: EventEmitter | undefined,
+	atomic: AtomicFn | undefined,
+	orphanAge: number,
 ) {
 	const idField = entityDef._options.idField ?? 'id';
 	const idType  = entityDef._options.idType ?? 'int';
@@ -450,9 +453,15 @@ function makeEntityHandler<TCategories extends Record<string, CategoryInput>>(
 
 		for (const category of Object.keys(categories)) {
 			const config = categories[category];
-			(result as Record<string, CategoryHandler>)[category] = makeCategoryHandler(
-				entityType, entityId, category, config.middlewares ?? [], entity, providerFor(category), nextGroupId, servePrefix, sanitizeFn, findUniqueFn, eventManager, config.code, idType,
-			);
+			(result as Record<string, unknown>)[category] = atomic
+				? makeAtomicCategoryHandler({
+					entityType, entityId, category, code: config.code, idType, entity,
+					middlewares: config.middlewares ?? [], provider: providerFor(category), atomic, orphanAge,
+					nextGroupId: nextGroupId ?? defaultNextGroupId, servePrefix, sanitizeFn, findUnique: findUniqueFn, eventManager,
+				})
+				: makeCategoryHandler(
+					entityType, entityId, category, config.middlewares ?? [], entity, providerFor(category), nextGroupId, servePrefix, sanitizeFn, findUniqueFn, eventManager, config.code, idType,
+				);
 		}
 
 		(result as unknown as { purge(): Promise<void> }).purge = () => serialize(entity, async (): Promise<void> => {
@@ -470,6 +479,16 @@ function makeEntityHandler<TCategories extends Record<string, CategoryInput>>(
 					} catch (err) {
 						left.push(item);
 						errors.push(err);
+					}
+				}
+				// Atomic mode: the folder may also hold orphans (crashed uploads); the entity is gone, so all of it goes.
+				if (atomic && p?.list && !left.length) {
+					try {
+						for (const file of await p.list(groupFolder(store.i))) {
+							await p.delete(physicalPath(store.i, file.name)).catch(() => {});
+						}
+					} catch {
+						// best effort
 					}
 				}
 				if (left.length) failed[category] = { ...store, f: left };
@@ -490,21 +509,21 @@ function makeEntityHandler<TCategories extends Record<string, CategoryInput>>(
 // --- Factory ---
 
 type DefineAttachmentsFn = {
-	<TConfig extends Record<string, EntityDefinition<Record<string, CategoryInput>>>>(
+	<TConfig extends Record<string, EntityDefinition<Record<string, CategoryInput>>>, O extends Partial<DefineAttachmentsOptions> = {}>(
 		config: TConfig,
-		options?: Partial<DefineAttachmentsOptions>,
-	): { [K in keyof TConfig]: (entity: EntityRecord) => AttachmentHandler<TConfig[K]['categories']> };
-	entity<TCategories extends Record<string, CategoryInput>>(
+		options?: O,
+	): AttachmentsModule<TConfig, O>;
+	entity<TCategories extends Record<string, CategoryInput>, O extends EntityOptions = {}>(
 		categories: TCategories,
-		options?: EntityOptions,
-	): EntityDefinition<TCategories>;
+		options?: O,
+	): EntityDefinition<TCategories, HasAtomic<O>>;
 };
 
 export const defineAttachments: DefineAttachmentsFn = Object.assign(
-	function defineAttachments<TConfig extends Record<string, EntityDefinition<Record<string, CategoryInput>>>>(
+	function defineAttachments<TConfig extends Record<string, EntityDefinition<Record<string, CategoryInput>>>, O extends Partial<DefineAttachmentsOptions> = {}>(
 		config: TConfig,
-		options?: Partial<DefineAttachmentsOptions>,
-	): { [K in keyof TConfig]: (entity: EntityRecord) => AttachmentHandler<TConfig[K]['categories']> } {
+		options?: O,
+	): AttachmentsModule<TConfig, O> {
 		const provider     = options?.provider;
 		const nextGroupId  = options?.nextGroupId;
 		const servePrefix  = options?.servePrefix ?? '/file';
@@ -516,7 +535,8 @@ export const defineAttachments: DefineAttachmentsFn = Object.assign(
 		const findUniqueFn  = options?.findUnique ?? defaultFindUnique;
 		const eventManager  = options?.eventManager;
 		if (provider && eventManager) provider.setEventManager?.(eventManager);
-		const result = {} as { [K in keyof TConfig]: (entity: EntityRecord) => AttachmentHandler<TConfig[K]['categories']> };
+		const orphanAge     = options?.orphanAge ?? 86400;
+		const result = {} as Record<string, unknown>;
 
 		const registry: CategoryRegistry = new Map();
 		for (const [entityType, def] of Object.entries(config)) {
@@ -528,6 +548,7 @@ export const defineAttachments: DefineAttachmentsFn = Object.assign(
 					throw new Error(`${where}: code "${input.code}" is already used by ${existing.entityType}.${existing.category}.`);
 				}
 				if (input.provider && eventManager) input.provider.setEventManager?.(eventManager);
+				if (def._options.atomic ?? options?.atomic) assertAtomicProvider(input.provider ?? provider, where);
 				registry.set(input.code, {
 					entityType,
 					category,
@@ -539,18 +560,19 @@ export const defineAttachments: DefineAttachmentsFn = Object.assign(
 			}
 		}
 
-		for (const key of Object.keys(config) as (keyof TConfig & string)[]) {
-			result[key] = makeEntityHandler(key, config[key], provider, nextGroupId, servePrefix, sanitizeFn, findUniqueFn, eventManager) as typeof result[typeof key];
+		for (const key of Object.keys(config)) {
+			const def = config[key];
+			result[key] = makeEntityHandler(key, def, provider, nextGroupId, servePrefix, sanitizeFn, findUniqueFn, eventManager, def._options.atomic ?? options?.atomic, orphanAge);
 		}
 
 		Object.defineProperty(result, CATEGORY_REGISTRY, { value: registry, enumerable: false });
-		return result;
+		return result as AttachmentsModule<TConfig, O>;
 	},
 	{
-		entity<TCategories extends Record<string, CategoryInput>>(
+		entity<TCategories extends Record<string, CategoryInput>, O extends EntityOptions = {}>(
 			categories: TCategories,
-			options?: EntityOptions,
-		): EntityDefinition<TCategories> {
+			options?: O,
+		): EntityDefinition<TCategories, HasAtomic<O>> {
 			return { _options: options ?? {}, categories };
 		},
 	},

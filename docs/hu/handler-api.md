@@ -31,6 +31,8 @@ h.avatar.get('photo.jpg')  // AttachmentData | undefined
 
 Minden írási metódus **helyben módosítja az `entity.attachments`-t**. Minden írás után `prisma.update`-tel kell menteni.
 
+Ez az oldal az alapmódot írja le. Atomi módban az írási metódusok maguk mentenek, az `add` és a `replace` `rollback` nélkül adja vissza a csatolmányt, az `updateMeta` és a `reorder` pedig aszinkron — lásd [Egyidejű írások](concurrency.md).
+
 ### `add(file, meta)`
 
 ```ts
@@ -130,6 +132,8 @@ try {
 | `sanitize`     | `false \| true \| (name) => string`                    | `true` (beépített)| Fájlnév sanitizálás                              |
 | `findUnique`   | `(existing, name) => string`                           | `base(n)ext`     | Névütközés feloldás az `add()`-hoz                |
 | `eventManager` | `EventEmitter`                                         | —                | Event busz az attachment életciklus eseményekhez  |
+| `atomic`       | `AtomicFn`                                             | —                | Bekapcsolja az atomi módot: a csomag minden változást ezen a függvényen keresztül ment (lásd [Egyidejű írások](concurrency.md)) |
+| `orphanAge`    | `number` (másodperc)                                   | `86400`          | Atomi mód: az ennél régebbi, listában nem szereplő fájlokat árvaként törli |
 
 ---
 
@@ -141,6 +145,7 @@ try {
 |-----------|-------------------|-----------------|-------------------------------------------------------------------------|
 | `idField` | `string`          | `'id'`          | Az entitás elsődleges kulcs mezője                                      |
 | `idType`  | `'int' \| 'uuid'` | `'int'`         | Az azonosító group ID-ba kódolása (base36); string/slug nem támogatott  |
+| `atomic`  | `AtomicFn`        | —               | Atomi mód csak ennél az entitásnál; felülírja a `defineAttachments` opciót |
 
 ## `CategoryConfig`
 

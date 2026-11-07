@@ -3,11 +3,13 @@
 A middleware-ek sorban futnak le az `add()` és `replace()` előtt. `AttachmentValidationError` dobásával megszakítható a feltöltés.
 
 ```ts
-type UploadMiddleware<TMeta = unknown> = (
+type UploadMiddleware<TMeta = unknown> = ((
 	file: File,
 	meta: TMeta,
 	files: AttachmentData<TMeta>[],   // meglévő fájlok a kategóriában
-) => Promise<{ file: File; meta: TMeta }>;
+) => Promise<{ file: File; meta: TMeta }>) & {
+	check?: (file: File, files: AttachmentData<TMeta>[]) => void;   // opcionális, lásd lent
+};
 ```
 
 A middleware-eket kategóriánként adod meg, a kategória objektum `middlewares` tömbjében (minden kategóriának kötelező a kétkarakteres `code` is, lásd [Handler API](handler-api.md)):
@@ -25,13 +27,37 @@ const attachments = defineAttachments({
 
 A middleware a kapott `meta` módosítása helyett új `meta` objektumot adjon vissza: a hívó ugyanazt a meta objektumot több feltöltéshez is felhasználhatja. A beépített transzformátorok így működnek.
 
+### A többi fájltól függő korlátok: `check`
+
+A `files` argumentum a kérés által betöltött lista. Atomi módban (lásd [Egyidejű írások](concurrency.md)) az egyidejű feltöltések megváltoztathatják ezt a listát, mielőtt a feltöltés elmentődik, ezért a többi fájltól függő korlátnak egy szinkron `check` részre is szüksége van, amely a feltöltés mentésekor a friss listán újra lefut. A `count()` és a `sumSize()` rendelkezik vele. Egyedi korlát az `Object.assign`-nal adja hozzá:
+
+```ts
+import { AttachmentValidationError, type AttachmentData, type UploadMiddleware } from '@atom-forge/attachment';
+
+// Legfeljebb `max` PDF fájl a kategóriában.
+export function maxPdfs(max: number): UploadMiddleware {
+  const check = (file: File, files: AttachmentData[]) => {
+    const pdfs = files.filter((f) => f.filename.endsWith('.pdf')).length;
+    if (file.name.endsWith('.pdf') && pdfs >= max) {
+      throw new AttachmentValidationError(`At most ${max} PDF files.`);
+    }
+  };
+  return Object.assign(async (file: File, meta: unknown, files: AttachmentData[]) => {
+    check(file, files);
+    return { file, meta };
+  }, { check });
+}
+```
+
+Alapmódban a `check` nem fut külön; a middleware maga hívja meg.
+
 ---
 
 ## Validátorok
 
 ### `count(max)`
 
-Elutasítja a feltöltést, ha a kategóriában már `max` vagy több fájl van.
+Elutasítja a feltöltést, ha a kategóriában már `max` vagy több fájl van. Atomi módban a korlát az egyidejű feltöltésekre is érvényes.
 
 ```ts
 count(1)   // legfeljebb egy fájl (avatar eset)
@@ -48,7 +74,7 @@ size(2 * 1024 * 1024)   // 2 MB
 
 ### `sumSize(maxBytes)`
 
-Elutasítja, ha a meglévő fájlok + az új fájl együttes mérete meghaladja a `maxBytes`-t.
+Elutasítja, ha a meglévő fájlok + az új fájl együttes mérete meghaladja a `maxBytes`-t. Atomi módban a korlát az egyidejű feltöltésekre is érvényes.
 
 ```ts
 sumSize(50 * 1024 * 1024)   // 50 MB összesen a kategóriában

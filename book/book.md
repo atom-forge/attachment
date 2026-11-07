@@ -13,6 +13,7 @@ children:
   - "[[image.md]]"
   - "[[serving.md]]"
   - "[[storage.md]]"
+  - "[[concurrency.md]]"
   - "[[access-control.md]]"
   - "[[upgrading.md]]"
   - "[AI Notes](ai-notes.md)"
@@ -37,7 +38,8 @@ The chapters build on each other, so reading them in order works best:
 4. **Image Handling** shows how thumbnails and image variants work.
 5. **Serving Files** wires everything into your framework and reverse proxy.
 6. **Storage** describes the JSON format, the providers and the events behind it all.
-7. **Access Control** explains how categories become public or authorized, and how the reverse proxy and storage keep authorized files protected.
+7. **Concurrent Writes** shows the optional atomic mode, which keeps concurrent changes of the same entity from overwriting each other.
+8. **Access Control** explains how categories become public or authorized, and how the reverse proxy and storage keep authorized files protected.
 
 When you upgrade from an earlier version, read **Upgrading**: it lists every change that needs action, version by version. **AI Notes** gives copyable instructions for coding agents working in projects that use the package.
 

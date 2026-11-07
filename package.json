@@ -49,6 +49,7 @@
 	],
 	"scripts": {
 		"build": "rm -rf dist && tsc",
+		"test": "bun test",
 		"prepublishOnly": "bun run build",
 		"release": "npm publish --access public",
 		"pub-check": "bun run scripts/pub-check.ts",

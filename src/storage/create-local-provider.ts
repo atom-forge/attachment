@@ -1,8 +1,42 @@
 import fs from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
+import { createReadStream, constants as fsConstants } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import path from 'node:path';
-import type { StorageProvider } from '../types.js';
+import type { StorageProvider, StoredFile } from '../types.js';
+
+async function writeTemp(dest: string, file: File): Promise<string> {
+	const data = new Uint8Array(await file.arrayBuffer());
+	const temp = path.join(path.dirname(dest), `.${path.basename(dest)}.${randomBytes(6).toString('hex')}.part`);
+	for (let attempt = 0; ; attempt++) {
+		await fs.mkdir(path.dirname(dest), { recursive: true });
+		try {
+			await fs.writeFile(temp, data, { flag: 'wx' });
+			return temp;
+		} catch (err) {
+			// delete() removes an emptied folder; a concurrent write may lose its folder once
+			if ((err as NodeJS.ErrnoException).code !== 'ENOENT' || attempt >= 2) throw err;
+		}
+	}
+}
+
+const pathLocks = new Map<string, Promise<unknown>>();
+
+async function withPathLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+	const previous = pathLocks.get(key) ?? Promise.resolve();
+	const run = previous.then(fn, fn);
+	const tail = run.catch(() => {});
+	pathLocks.set(key, tail);
+	try {
+		return await run;
+	} finally {
+		if (pathLocks.get(key) === tail) pathLocks.delete(key);
+	}
+}
+
+function statToken(st: { ino: number; mtimeMs: number; size: number }): string {
+	return `${st.ino}-${st.mtimeMs}-${st.size}`;
+}
 
 export function createLocalProvider(uploadDir: string): StorageProvider {
 	const root = path.resolve(uploadDir);
@@ -51,6 +85,77 @@ export function createLocalProvider(uploadDir: string): StorageProvider {
 		},
 		async rename(oldLogicalPath, newLogicalPath) {
 			await fs.rename(fullPath(oldLogicalPath), fullPath(newLogicalPath));
+		},
+
+		// --- atomic mode ---
+
+		async create(logicalPath, file) {
+			// Written under a temporary name and linked into place: link() fails when the
+			// target exists, and readers never see a half-written file under the real name.
+			const dest = fullPath(logicalPath);
+			const temp = await writeTemp(dest, file);
+			try {
+				await fs.link(temp, dest);
+				return true;
+			} catch (err) {
+				if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
+				throw err;
+			} finally {
+				await fs.unlink(temp).catch(() => {});
+			}
+		},
+		async copy(fromLogicalPath, toLogicalPath) {
+			try {
+				await fs.copyFile(fullPath(fromLogicalPath), fullPath(toLogicalPath), fsConstants.COPYFILE_EXCL);
+				return true;
+			} catch (err) {
+				if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
+				throw err;
+			}
+		},
+		async list(logicalFolder) {
+			const dir = fullPath(logicalFolder);
+			let names: string[];
+			try {
+				names = (await fs.readdir(dir, { withFileTypes: true })).filter((e) => e.isFile()).map((e) => e.name);
+			} catch (err) {
+				if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+				throw err;
+			}
+			const files: StoredFile[] = [];
+			for (const name of names) {
+				try {
+					files.push({ name, modified: (await fs.stat(path.join(dir, name))).mtimeMs });
+				} catch {
+					// deleted meanwhile
+				}
+			}
+			return files;
+		},
+		async etag(logicalPath) {
+			try {
+				return statToken(await fs.stat(fullPath(logicalPath)));
+			} catch (err) {
+				if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+				throw err;
+			}
+		},
+		async replaceIf(logicalPath, file, etag) {
+			// The file system has no conditional overwrite: the check and the rename are two
+			// steps. They run under a per-path lock, which makes them exact within one process;
+			// processes sharing the folder (e.g. over NFS) keep a window of microseconds.
+			const dest = fullPath(logicalPath);
+			const temp = await writeTemp(dest, file);
+			try {
+				return await withPathLock(dest, async () => {
+					const current = await fs.stat(dest).then(statToken, () => null);
+					if (current !== etag) return false;
+					await fs.rename(temp, dest);
+					return true;
+				});
+			} finally {
+				await fs.unlink(temp).catch(() => {});
+			}
 		},
 	};
 }

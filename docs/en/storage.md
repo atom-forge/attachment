@@ -86,6 +86,13 @@ interface StorageProvider {
   exists(path: string):                         Promise<boolean>;
   rename(oldPath: string, newPath: string):     Promise<void>;
   setEventManager?(em: EventEmitter):           void;
+
+  // needed only in atomic mode (see Concurrent Writes)
+  create?(path: string, file: File):                     Promise<boolean>;   // false: already exists
+  copy?(from: string, to: string):                       Promise<boolean>;   // false: target exists
+  list?(folder: string):                                 Promise<{ name: string; modified: number }[]>;
+  etag?(path: string):                                   Promise<string | null>;
+  replaceIf?(path: string, file: File, etag: string):    Promise<boolean>;   // false: changed or deleted
 }
 ```
 
@@ -97,6 +104,7 @@ Contract notes for the built-in providers:
 - `exists` — the S3 provider returns `false` only for "not found" and rethrows every other error (credentials, network). Without the `s3:ListBucket` permission S3 answers 403 for missing keys, which then surfaces as an error instead of `false`.
 - `stream` — the S3 provider is pull-based: it reads from S3 only as fast as the client consumes, and cancels the S3 body when the client goes away.
 - `rename` — the S3 provider treats renaming to the same key as a no-op.
+- The atomic-mode methods never overwrite or create a file unconditionally; both built-in providers implement them. A custom provider needs them only if you enable atomic mode (`defineAttachments` checks this at startup). See [Concurrent Writes](concurrency.md).
 
 ---
 

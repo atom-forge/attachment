@@ -18,7 +18,8 @@ A fejezetek egymásra épülnek, ezért érdemes sorrendben olvasni őket:
 4. **[Képkezelés](image.md)**: bemutatja, hogyan működnek a thumbnailek és a képvariánsok.
 5. **[Fájlkiszolgálás](serving.md)**: mindezt bekötöd a frameworködbe és a reverse proxyba.
 6. **[Tárolás](storage.md)**: leírja a JSON formátumot, a providereket és az eseményeket, amelyek mindez mögött állnak.
-7. **[Hozzáférés-szabályozás](access-control.md)**: elmagyarázza, hogyan lesz egy kategória publikus vagy jogosultsághoz kötött, és hogyan védi a reverse proxy és a tároló a jogosultsághoz kötött fájlokat.
+7. **[Egyidejű írások](concurrency.md)**: bemutatja az opcionális atomi módot, amellyel ugyanannak az entitásnak az egyidejű változásai nem írják felül egymást.
+8. **[Hozzáférés-szabályozás](access-control.md)**: elmagyarázza, hogyan lesz egy kategória publikus vagy jogosultsághoz kötött, és hogyan védi a reverse proxy és a tároló a jogosultsághoz kötött fájlokat.
 
 Ha korábbi verzióról frissítesz, olvasd el a **[Frissítés](upgrading.md)** fejezetet: verzióról verzióra felsorol minden változást, amely teendővel jár. Az **[AI jegyzetek](ai-notes.md)** másolható utasításokat ad a csomagot használó projektekben dolgozó kódoló ágenseknek.
 

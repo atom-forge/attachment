@@ -1,45 +1,24 @@
 # Agent Instructions
 
-## Changelog
+Attachment (`@atom-forge/attachment`) is a portable, framework-agnostic file attachment system for Prisma entities. File metadata is stored in a `Json?` column, without a separate file table.
 
-Always record every change in `CHANGELOG.md` as part of the same task, including code, documentation, configuration, and agent-instruction changes. A task is not complete until its changelog entry is updated.
+How to use the package — its rules, API, and a minimal example — is described in [`README-AI.md`](README-AI.md). Read it before changing the package's behavior or its documentation.
 
-- Add entries under `## [Unreleased]` using the appropriate Keep a Changelog category: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, or `Security`.
-- Write concise entries in English describing what changed and its impact. Related changes may share one entry; avoid duplicate entries.
-- Preserve existing entries and released version sections. Do not bump the version or create a release section unless explicitly asked to prepare or publish a release.
-- Start an entry with `**Breaking:**` when the change may require action from users, and document it in the book's upgrading chapter (see *Upgrading chapter* below).
+Documentation model: **book-first**.
 
-## Documentation
+## Rules
 
-The book in `book/` (entry: `book/book.md`, BookMD format, published at https://books.atom-forge.eu) is the source of truth for the documentation. Its structure:
+Read the rule file that applies before you start, not only at the end:
 
-1. Intro — `book/book.md`: overview, audience, and reading guide.
-2. Usage chapters — `getting-started.md`, `handler-api.md`, `middleware.md`, `image.md`, `serving.md`, `storage.md`, `access-control.md`.
-3. Upgrading — `book/upgrading.md`: migration notes between versions (see below).
-4. AI Notes — `book/ai-notes.md`: copyable instructions for coding agents working in projects that use the package.
+- **Changing code, tests, or configuration** → read `AGENTS/devrules.md` first: this package's development rules, source layout, and commands.
+- **Changing the book, `docs/`, `README.md`, or `README-AI.md`** — including any change to the public API or its behavior, which always needs documentation → read `AGENTS/documentation.md` first.
+- **Every task** ends with a `CHANGELOG.md` entry → follow `AGENTS/changelog.md`.
 
-When adding, removing, or renaming a chapter, update both the `children` list and the reading guide in `book/book.md`.
+`AGENTS/changelog.md` and `AGENTS/documentation.md` are shared by every AtomForge package and are identical in all of their repositories: change them only when the change is meant for every package, and then in all AtomForge package repositories at once. Everything else in `AGENTS/` — `devrules.md` and the files it refers to — belongs to this package alone.
 
-Changes always flow in one direction:
+## Todos and notes
 
-1. `book/` — write or change the documentation here first.
-2. `docs/en/` — the English docs derived from the book. Update it to reflect the book change. Its structure depends on size: a small documentation fits on a single page (`docs/en/index.md`); a larger one is split into chapter files that mirror the book's chapters, with `docs/en/index.md` as the entry page linking to them. The intro, the usage chapters, and Upgrading are carried over; AI Notes stays in the book only, because `README-AI.md` fills that role in the package.
-3. `docs/hu/` — the Hungarian translation of `docs/en/`. Mirror its structure file by file and keep it in sync with the English docs, section by section.
-
-Both `docs/en/` and `docs/hu/` are shipped in the npm package. Never change `docs/en` or `docs/hu` without the corresponding book change.
-
-### Upgrading chapter
-
-`book/upgrading.md` is the migration guide. Every change that may require action from users must be documented there in the same task: changed or stricter behavior, removed or renamed API, changed types, changed error messages, and new runtime or package requirements.
-
-- Add it to the section of the upcoming release (`## From <previous> to <next>`); create that section at the top of the chapter, below the introduction, if it does not exist yet. If the next version has not been decided, use `Unreleased` as `<next>` (for example `## From 0.3.19 to Unreleased`) and rename the section when the release is prepared — do not pick a version number yourself.
-- Give each change its own subsection: what changed, before/after behavior (a table or example where it helps), and a **What to do:** paragraph.
-- Changes that need no action stay out of this chapter; the changelog covers them.
-- Start the change's `CHANGELOG.md` entry with **Breaking:**, and carry the update over to `docs/en` and `docs/hu` like any other book change.
-
-### README-AI.md
-
-`README-AI.md` in the repository root is the AI usage guide shipped in the npm package; coding agents in consuming projects read it first. Maintain it together with the book's AI Notes chapter (`book/ai-notes.md`), which tells those projects to start from it:
-
-- When a change affects the essential usage rules, the minimal working example, common extensions, or the documentation map, update `README-AI.md` in the same task.
-- Keep `README-AI.md` and `book/ai-notes.md` consistent: file paths, reading order, and rules referenced by one must match the other.
+- `TODO.md` lists planned work, most important first, one or two lines per item. Longer context lives in `notes/`, and the item links to it.
+- `notes/` holds ideas, plans, specs, and research in any form and language.
+- Neither is an instruction: work on an item only when asked. When you finish one, remove it from `TODO.md` (the changelog records the change) and update or delete the notes it made obsolete. When you notice work outside the current task, add it to `TODO.md` and mention it in your report.
+- Neither is shipped in the npm package.
