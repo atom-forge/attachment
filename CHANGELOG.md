@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.5.0] - 2026-11-07
+
 ### Added
 - **Atomic mode** for concurrent writes (opt-in): with an `atomic(ctx, mutate)` function on `defineAttachments` (or on one entity), the package saves every change itself in one short atomic step, so concurrent requests — in one process or across instances — never overwrite each other. Uploads run outside the lock; files are only created where nothing exists and only overwritten if unchanged (concurrent same-name uploads get separate names, a deleted file never comes back, a replace of a deleted file fails and leaves nothing); `count()` and `sumSize()` hold under concurrent uploads; crash leftovers are swept as orphans after `orphanAge` (default one day). The JSON format, file names and folders are unchanged. In atomic mode `add`/`replace` return the attachment without `rollback`, and `updateMeta`/`reorder` are asynchronous; the types follow the option. New chapter *Concurrent Writes* with Prisma examples (row lock, compare-and-set).
 - Optional storage provider methods `create`, `copy`, `list`, `etag` and `replaceIf` (needed only in atomic mode, checked at startup), implemented by the local provider and the S3 provider (S3 conditional writes: `If-None-Match`, `If-Match`; `list` needs `s3:ListBucket`).
