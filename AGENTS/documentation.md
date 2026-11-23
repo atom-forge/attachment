@@ -38,7 +38,7 @@ Changes always flow in one direction:
 
 ## Shipping
 
-`docs/en/`, `docs/hu/`, and `README-AI.md` are shipped in the npm package; the book is published at https://books.atom-forge.eu. Never change the docs or `README-AI.md` in a way that contradicts the source of truth of the package's model. `README.md` links to the published book, the docs, and `README-AI.md`. Documentation for developing the package itself belongs in `AGENTS.md` and `AGENTS/`, not in the shipped docs.
+`docs/en/`, `docs/hu/`, and `README-AI.md` are shipped in the npm package; the book is published at https://books.atomforge.eu. Never change the docs or `README-AI.md` in a way that contradicts the source of truth of the package's model. `README.md` links to the published book, the docs, and `README-AI.md`. Documentation for developing the package itself belongs in `AGENTS.md` and `AGENTS/`, not in the shipped docs.
 
 ## Writing the book
 

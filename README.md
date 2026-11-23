@@ -7,7 +7,7 @@ Stores file metadata in a `Json?` column — no separate file table.
 
 ## Documentation
 
-- [The Attachment book](https://books.atom-forge.eu) — the full documentation as a multi-page book.
+- [The Attachment book](https://books.atomforge.eu) — the full documentation as a multi-page book.
 - [English documentation](docs/en/index.md) ([magyarul](docs/hu/index.md)) — the same documentation shipped with the package, including the upgrade notes.
 - [AI guide](README-AI.md) — the entry point for coding agents using the package.
 
